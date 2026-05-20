@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Flatpal
+GenericName=Flatpak Manager
+Comment=Browse, sort, and open installed Flatpak apps
+Exec=flatpal
+Icon=flatpal
+Terminal=false
+Categories=System;Utility;PackageManager;
+Keywords=flatpak;apps;packages;manage;list;
+StartupNotify=true
+StartupWMClass=com.hawwwran.flatpal

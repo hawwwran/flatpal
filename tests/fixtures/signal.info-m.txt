@@ -1,0 +1,41 @@
+[Application]
+name=org.signal.Signal
+runtime=org.freedesktop.Platform/x86_64/25.08
+sdk=org.freedesktop.Sdk/x86_64/25.08
+base=app/org.electronjs.Electron2.BaseApp/x86_64/25.08
+command=signal-desktop
+
+[Context]
+shared=network;ipc;
+sockets=x11;wayland;pulseaudio;fallback-x11;
+devices=all;
+
+[Session Bus Policy]
+org.freedesktop.secrets=talk
+com.canonical.indicator.application=talk
+org.ayatana.indicator.application=talk
+org.freedesktop.PowerManagement=talk
+org.kde.StatusNotifierWatcher=talk
+org.freedesktop.ScreenSaver=talk
+org.gnome.Mutter.IdleMonitor=talk
+com.canonical.AppMenu.Registrar=talk
+org.gnome.SessionManager=talk
+com.canonical.Unity=talk
+org.kde.kwalletd6=talk
+
+[System Bus Policy]
+org.freedesktop.login1=talk
+
+[Environment]
+SIGNAL_DISABLE_GPU=0
+SIGNAL_DISABLE_GPU_SANDBOX=0
+XCURSOR_PATH=/run/host/user-share/icons:/run/host/share/icons
+SIGNAL_PASSWORD_STORE=basic
+
+[Extension org.signal.Signal.Debug]
+directory=lib/debug
+autodelete=true
+no-autodownload=true
+
+[Build]
+built-extensions=org.signal.Signal.Debug;org.signal.Signal.Sources;

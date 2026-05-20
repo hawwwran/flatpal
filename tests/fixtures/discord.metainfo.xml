@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.discordapp.Discord</id>
+  <name>Discord</name>
+  <developer id="com.discord">
+    <name>Discord Inc.</name>
+  </developer>
+  <summary>Talk, play, hang out</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <url type="homepage">https://discord.com</url>
+  <url type="help">https://support.discord.com</url>
+  <url type="bugtracker">https://support.discord.com/hc/categories/115000168371</url>
+  <url type="contact">https://discord.com/company-information</url>
+  <launchable type="desktop-id">com.discordapp.Discord.desktop</launchable>
+  <description>
+    <p>Discord is a free all in one messaging, voice, and video client thats available on your computer and phone.</p>
+    <p>Whether you’re part of a school club, gaming group, worldwide art community, or just a handful of friends that want to spend time together, Discord makes it easy to talk every day and hang out more often.</p>
+    <ul>
+      <li>Talk to your friends with messaging, voice, and video in a "Direct Message" (1 other person), group chat (up to 10 people), or a multi-channel server (practically infinite maximum members).</li>
+      <li>Discord servers are organized into topic-based channels where you can collaborate, share, and just talk about your day without clogging up a group chat.</li>
+      <li>Grab a seat in a voice channel when you’re free. Friends in your server can see you’re around and instantly pop in to talk without having to call.</li>
+      <li>Get a community of any size running with moderation tools and custom member access. Give members special powers, set up private channels, and more.</li>
+      <li>Low-latency voice and video feels like you’re in the same room. Wave hello over video, watch friends stream their games, or gather up and have a drawing session with screen share.</li>
+      <li>Available on Linux, macOS, Windows, iOS, Android, and your web browser.</li>
+    </ul>
+    <p>Discord is written in Javascript, React, Elixir, and Rust. The desktop application uses the electron framework.</p>
+    <p>The flatpak version runs in a sandbox to provide better safety and privacy for users. However, this sandboxing prevents the following features from working out of the box: Game Activity, Unrestricted File Access, Rich Presence. Check the README in the Github repo for details.</p>
+  </description>
+  <screenshots>
+    <screenshot type="default">
+      <image type="source">https://raw.githubusercontent.com/flathub/com.discordapp.Discord/50940340c71dd975d0eb959174b58f12c97f58d0/screenshot-dark.png</image>
+      <caption>Dark Mode Window</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source">https://raw.githubusercontent.com/flathub/com.discordapp.Discord/50940340c71dd975d0eb959174b58f12c97f58d0/screenshot-light.png</image>
+      <caption>Light Mode Window</caption>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#a0aaf3</color>
+    <color type="primary" scheme_preference="dark">#3831a8</color>
+  </branding>
+  <categories>
+    <category>InstantMessaging</category>
+    <category>Network</category>
+  </categories>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+    <content_attribute id="social-contacts">intense</content_attribute>
+    <content_attribute id="money-purchasing">intense</content_attribute>
+  </content_rating>
+  <requires>
+    <display_length compare="ge">940</display_length>
+    <internet>always</internet>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <update_contact>support@discordapp.com</update_contact>
+  <releases>
+    <release version="1.0.139" date="2026-05-18">
+      <description></description>
+    </release>
+    <release version="1.0.138" date="2026-05-11">
+      <description/>
+    </release>
+    <release version="1.0.137" date="2026-05-05">
+      <description/>
+    </release>
+    <release version="1.0.136" date="2026-05-04">
+      <description/>
+    </release>
+    <release version="0.0.135" date="2026-04-27">
+      <description/>
+    </release>
+    <release version="0.0.134" date="2026-04-20">
+      <description/>
+    </release>
+    <release version="0.0.133" date="2026-04-13">
+      <description/>
+    </release>
+    <release version="0.0.132" date="2026-04-07">
+      <description/>
+    </release>
+    <release version="0.0.131" date="2026-03-30">
+      <description/>
+    </release>
+    <release version="0.0.130" date="2026-03-23">
+      <description/>
+    </release>
+    <release version="0.0.129" date="2026-03-17">
+      <description/>
+    </release>
+    <release version="0.0.128" date="2026-03-09">
+      <description/>
+    </release>
+    <release version="0.0.127" date="2026-03-02">
+      <description/>
+    </release>
+    <release version="0.0.126" date="2026-02-23">
+      <description/>
+    </release>
+    <release version="0.0.125" date="2026-02-17">
+      <description/>
+    </release>
+    <release version="0.0.124" date="2026-02-09">
+      <description/>
+    </release>
+    <release version="0.0.123" date="2026-02-02">
+      <description/>
+    </release>
+    <release version="0.0.122" date="2026-01-26">
+      <description/>
+    </release>
+    <release version="0.0.121" date="2026-01-20">
+      <description/>
+    </release>
+    <release version="0.0.120" date="2026-01-12">
+      <description/>
+    </release>
+    <release version="0.0.119" date="2025-12-15">
+      <description/>
+    </release>
+    <release version="0.0.118" date="2025-12-08">
+      <description/>
+    </release>
+    <release version="0.0.117" date="2025-12-01">
+      <description/>
+    </release>
+    <release version="0.0.116" date="2025-11-24">
+      <description/>
+    </release>
+    <release version="0.0.115" date="2025-11-18">
+      <description/>
+    </release>
+    <release version="0.0.114" date="2025-11-10">
+      <description/>
+    </release>
+    <release version="0.0.113" date="2025-10-27">
+      <description/>
+    </release>
+    <release version="0.0.112" date="2025-10-14">
+      <description/>
+    </release>
+    <release version="0.0.111" date="2025-09-22">
+      <description/>
+    </release>
+    <release version="0.0.110" date="2025-09-15">
+      <description/>
+    </release>
+    <release version="0.0.109" date="2025-09-09">
+      <description/>
+    </release>
+    <release version="0.0.108" date="2025-09-02">
+      <description/>
+    </release>
+    <release version="0.0.107" date="2025-08-26">
+      <description/>
+    </release>
+    <release version="0.0.106" date="2025-08-20">
+      <description/>
+    </release>
+    <release version="0.0.105" date="2025-08-19">
+      <description/>
+    </release>
+    <release version="0.0.104" date="2025-08-04">
+      <description/>
+    </release>
+    <release version="0.0.103" date="2025-07-28">
+      <description/>
+    </release>
+    <release version="0.0.102" date="2025-07-14">
+      <description/>
+    </release>
+    <release version="0.0.101" date="2025-07-07">
+      <description/>
+    </release>
+    <release version="0.0.100" date="2025-06-30">
+      <description/>
+    </release>
+    <release version="0.0.99" date="2025-06-24">
+      <description/>
+    </release>
+    <release version="0.0.98" date="2025-06-16">
+      <description/>
+    </release>
+    <release version="0.0.97" date="2025-06-09">
+      <description/>
+    </release>
+    <release version="0.0.96" date="2025-06-02">
+      <description/>
+    </release>
+    <release version="0.0.95" date="2025-05-19">
+      <description/>
+    </release>
+    <release version="0.0.94" date="2025-05-05">
+      <description/>
+    </release>
+    <release version="0.0.93" date="2025-04-29">
+      <description/>
+    </release>
+    <release version="0.0.92" date="2025-04-22">
+      <description/>
+    </release>
+    <release version="0.0.91" date="2025-04-15">
+      <description/>
+    </release>
+    <release version="0.0.89" date="2025-04-14">
+      <description/>
+    </release>
+    <release version="0.0.88" date="2025-03-10">
+      <description/>
+    </release>
+    <release version="0.0.87" date="2025-02-24">
+      <description/>
+    </release>
+    <release version="0.0.74" date="2024-11-12">
+      <description/>
+    </release>
+    <release version="0.0.73" date="2024-11-04">
+      <description/>
+    </release>
+    <release version="0.0.72" date="2024-10-21">
+      <description/>
+    </release>
+    <release version="0.0.71" date="2024-10-09">
+      <description/>
+    </release>
+    <release version="0.0.70" date="2024-10-01">
+      <description/>
+    </release>
+    <release version="0.0.69" date="2024-09-23">
+      <description/>
+    </release>
+    <release version="0.0.68" date="2024-09-09">
+      <description/>
+    </release>
+    <release version="0.0.67" date="2024-09-04">
+      <description/>
+    </release>
+    <release version="0.0.66" date="2024-08-27">
+      <description/>
+    </release>
+    <release version="0.0.65" date="2024-08-22">
+      <description/>
+    </release>
+    <release version="0.0.64" date="2024-08-13">
+      <description/>
+    </release>
+    <release version="0.0.63" date="2024-08-05">
+      <description/>
+    </release>
+    <release version="0.0.62" date="2024-07-30">
+      <description/>
+    </release>
+    <release version="0.0.61" date="2024-07-22">
+      <description/>
+    </release>
+    <release version="0.0.60" date="2024-07-15">
+      <description/>
+    </release>
+    <release version="0.0.59" date="2024-07-08">
+      <description/>
+    </release>
+    <release version="0.0.58" date="2024-06-24">
+      <description/>
+    </release>
+    <release version="0.0.57" date="2024-06-17">
+      <description/>
+    </release>
+    <release version="0.0.56" date="2024-06-10">
+      <description/>
+    </release>
+    <release version="0.0.55" date="2024-06-04">
+      <description/>
+    </release>
+    <release version="0.0.54" date="2024-05-13"/>
+    <release version="0.0.53" date="2024-05-06"/>
+    <release version="0.0.52" date="2024-04-29"/>
+    <release version="0.0.51" date="2024-04-22"/>
+    <release version="0.0.50" date="2024-04-16"/>
+    <release version="0.0.49" date="2024-04-09"/>
+    <release version="0.0.48" date="2024-04-08"/>
+    <release version="0.0.47" date="2024-03-25"/>
+    <release version="0.0.46" date="2024-03-18"/>
+    <release version="0.0.45" date="2024-03-12"/>
+    <release version="0.0.44" date="2024-03-06"/>
+    <release version="0.0.43" date="2024-02-12"/>
+    <release version="0.0.42" date="2024-01-29"/>
+    <release version="0.0.41" date="2024-01-22"/>
+    <release version="0.0.40" date="2024-01-09"/>
+    <release version="0.0.39" date="2023-12-19"/>
+    <release version="0.0.38" date="2023-12-12"/>
+    <release version="0.0.37" date="2023-12-05"/>
+    <release version="0.0.36" date="2023-11-28"/>
+    <release version="0.0.35" date="2023-11-13"/>
+    <release version="0.0.34" date="2023-11-06"/>
+    <release version="0.0.33" date="2023-10-31"/>
+    <release version="0.0.32" date="2023-10-16"/>
+    <release version="0.0.31" date="2023-10-05"/>
+    <release version="0.0.30" date="2023-09-18"/>
+    <release version="0.0.29" date="2023-08-29"/>
+    <release version="0.0.28" date="2023-07-11"/>
+    <release version="0.0.27" date="2023-04-26"/>
+    <release version="0.0.26" date="2023-03-30"/>
+    <release version="0.0.25" date="2023-02-13"/>
+    <release version="0.0.24" date="2023-01-14"/>
+    <release version="0.0.23" date="2023-01-11"/>
+    <release version="0.0.22" date="2022-12-10"/>
+    <release version="0.0.21" date="2022-10-21"/>
+    <release version="0.0.20" date="2022-09-15"/>
+    <release version="0.0.19" date="2022-08-08"/>
+    <release version="0.0.18" date="2022-06-08"/>
+    <release version="0.0.17" date="2022-02-17"/>
+    <release version="0.0.16" date="2021-09-22"/>
+    <release version="0.0.15" date="2021-05-24"/>
+    <release version="0.0.14" date="2021-03-23"/>
+    <release version="0.0.13" date="2020-12-04"/>
+  </releases>
+</component>
