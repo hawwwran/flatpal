@@ -1,0 +1,45 @@
+# Flatpak manifest for Flathub submission.
+# See ../temp/flatpak-release-plan.md and
+# https://docs.flathub.org/docs/for-app-authors/submission for the
+# end-to-end process. This file plus the AppStream metainfo XML is
+# what Flathub reviewers inspect.
+
+app-id: io.github.hawwwran.flatpal
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: flatpal
+
+finish-args:
+  # Standard graphical-app surface.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+
+  # Network: Flathub popularity API + screenshot CDN downloads.
+  - --share=network
+
+  # Read host Flatpak install metadata (icons, AppStream cache, per-app
+  # metainfo XML). Narrower than --filesystem=host. Same precedent as
+  # Flatseal — see PR description for the justification reviewers want.
+  - --filesystem=/var/lib/flatpak:ro
+  - --filesystem=xdg-data/flatpak:ro
+
+  # Spawn host flatpak (list / ps / info / run / history) via
+  # flatpak-spawn --host. Core purpose of the app.
+  - --talk-name=org.freedesktop.Flatpak
+
+  # Hand off install / uninstall / update to GNOME Software.
+  - --talk-name=org.gnome.Software
+
+modules:
+  - name: flatpal
+    buildsystem: meson
+    sources:
+      - type: git
+        url: https://github.com/hawwwran/flatpal.git
+        tag: v0.5.0
+        # commit: <fill in once v0.5.0 is tagged in §10> — Flathub
+        # requires both tag and commit so the build is deterministic
+        # if the tag is ever force-moved.
