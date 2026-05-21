@@ -9,6 +9,7 @@ python.install_sources(
     'core.py',
     'detail.py',
     'explore_page.py',
+    'host.py',
     'installed_page.py',
     'metainfo.py',
     'navigator.py',

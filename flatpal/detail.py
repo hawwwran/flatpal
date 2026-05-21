@@ -23,6 +23,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from .cache import get_cached_or_download
 from .constants import THUMB_H, THUMB_W
 from .core import format_date
+from .host import host_cmd
 from .metainfo import load_metainfo
 from .permissions import parse_flatpak_metadata, summarize_permissions
 from .screenshot_viewer import ScreenshotViewer
@@ -46,9 +47,13 @@ def open_in_software(app_id: str) -> None:
 
 
 def run_flatpak_app(app_id: str) -> None:
-    """Launch the installed flatpak in its sandbox (background, detached)."""
+    """Launch the installed flatpak in its sandbox (background, detached).
+
+    Inside our own sandbox this routes through flatpak-spawn --host so the
+    target app runs in *its* sandbox on the host, not nested inside ours.
+    """
     subprocess.Popen(
-        ["flatpak", "run", app_id],
+        host_cmd(["flatpak", "run", app_id]),
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -86,7 +91,7 @@ def _load_permissions(app_id: str) -> list:
     """Run `flatpak info -m` for app_id and return the permission summary."""
     try:
         result = subprocess.run(
-            ["flatpak", "info", "-m", app_id],
+            host_cmd(["flatpak", "info", "-m", app_id]),
             capture_output=True, text=True, check=False, timeout=5,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):

@@ -1,37 +1,219 @@
 """Running-flatpaks enumeration + per-app CPU and memory sampling.
 
 Pure logic, no GTK. The UI calls `RunningTracker.sample()` on a timer and
-renders the returned list. The tracker caches `psutil.Process` objects across
-samples so `cpu_percent()` computes a delta — the first sample for a new
-process returns 0 % and subsequent samples reflect real activity. Memory is
-read from psutil's RSS (resident set size) — the physical RAM the process
-currently holds.
+renders the returned list. The tracker caches a Process-shaped object per
+PID across samples so `cpu_percent()` computes a delta — the first sample
+for a new process returns 0 % and subsequent samples reflect real activity.
+
+Two backends share the same shape:
+
+* `psutil.Process` — on the host (dev mode), when psutil is installed.
+* `HostProc`       — inside the Flatpak sandbox, where psutil's /proc reads
+                     would only see sandbox processes. HostProc reads
+                     /proc/<pid>/{stat,status,cmdline,comm} via
+                     `flatpak-spawn --host cat`, so it sees the host's
+                     processes through the sandbox boundary. Falls back to
+                     direct reads on the host when psutil is unavailable.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from typing import Callable, Iterable, List, Optional
 
+from .host import host_cmd, is_sandboxed
+
 try:
     import psutil
-except ImportError:  # pragma: no cover — psutil is in the deps
+except ImportError:  # pragma: no cover — psutil is optional now
     psutil = None  # type: ignore
 
 
-# psutil raises these for: process gone, denied, zombie, race-conditions during
-# /proc reads. We catch them at every psutil boundary so the UI degrades to
-# zero-values rather than crashing.
+# Errors raised by both psutil and HostProc when /proc reads race against a
+# process exiting, or when a stub test Process is missing methods. Catching
+# at every Process boundary means the UI degrades to zero-values instead of
+# crashing on a transient gone-process.
 _PROC_ERRORS: tuple = (
     (psutil.Error if psutil else Exception),
     OSError,
 )
-
-# Same as _PROC_ERRORS plus AttributeError/TypeError — the latter two cover
-# stub Process objects in tests (which don't implement cmdline/name/create_time)
-# and lets `_process_meta` fall through to its defaults instead of crashing.
 _META_ERRORS: tuple = _PROC_ERRORS + (AttributeError, TypeError)
+
+
+_CLOCK_TICKS = os.sysconf("SC_CLK_TCK")  # usually 100 on Linux
+
+
+class _MemInfo:
+    """psutil.Process.memory_info() shape — only .rss matters here."""
+    __slots__ = ("rss",)
+    def __init__(self, rss: int) -> None:
+        self.rss = rss
+
+
+class _ChildRef:
+    """Shape matching psutil.Process.children() entries — only .pid is used."""
+    __slots__ = ("pid",)
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+
+
+class HostProc:
+    """psutil.Process-shaped reader backed by /proc reads through host_cmd.
+
+    Caches cmdline / comm / create_time on first access (none change for a
+    live process). cpu_percent() follows psutil's `interval=None` contract:
+    first call seeds the baseline and returns 0.0; later calls return the %
+    over the delta since the previous call. memory_info().rss is read fresh
+    each call from /proc/PID/status's VmRSS line.
+    """
+
+    __slots__ = ("pid", "_cmdline", "_name", "_create_time", "_last_cpu")
+
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+        self._cmdline: Optional[List[str]] = None
+        self._name: Optional[str] = None
+        self._create_time: Optional[float] = None
+        self._last_cpu: Optional[tuple] = None  # (utime+stime ticks, monotonic seconds)
+
+    def _read(self, path: str, timeout: float = 2.0) -> str:
+        try:
+            r = subprocess.run(
+                host_cmd(["cat", path]),
+                capture_output=True, text=True, timeout=timeout, check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            raise OSError(str(exc)) from exc
+        if r.returncode != 0:
+            raise OSError(f"cat {path} rc={r.returncode}")
+        return r.stdout
+
+    def _stat_fields_after_comm(self) -> List[str]:
+        """Return /proc/PID/stat fields starting at field 3 (state).
+
+        comm (field 2) is in parentheses and may contain spaces, so we slice
+        from the LAST ')' rather than naive split.
+        """
+        text = self._read(f"/proc/{self.pid}/stat")
+        rparen = text.rfind(")")
+        if rparen == -1:
+            raise OSError(f"malformed stat for pid {self.pid}")
+        return text[rparen + 2:].split()
+
+    def cmdline(self) -> List[str]:
+        if self._cmdline is None:
+            try:
+                text = self._read(f"/proc/{self.pid}/cmdline")
+                self._cmdline = [a for a in text.split("\0") if a]
+            except OSError:
+                self._cmdline = []
+        return self._cmdline
+
+    def name(self) -> str:
+        if self._name is None:
+            try:
+                self._name = self._read(f"/proc/{self.pid}/comm").strip()
+            except OSError:
+                self._name = ""
+        return self._name
+
+    def create_time(self) -> float:
+        if self._create_time is not None:
+            return self._create_time
+        fields = self._stat_fields_after_comm()
+        starttime_ticks = int(fields[19])  # stat field 22 = starttime
+        # btime (boot timestamp, secs since epoch) lives in /proc/stat.
+        # Reading it once per HostProc instance is fine — it's a constant
+        # for the life of the kernel.
+        btime_text = self._read("/proc/stat")
+        btime = 0
+        for line in btime_text.splitlines():
+            if line.startswith("btime "):
+                btime = int(line.split()[1])
+                break
+        self._create_time = btime + starttime_ticks / _CLOCK_TICKS
+        return self._create_time
+
+    def cpu_percent(self, interval: Optional[float] = None) -> float:
+        """psutil-compatible: interval=None returns delta since last call."""
+        if interval is not None and interval > 0:
+            time.sleep(interval)
+        try:
+            fields = self._stat_fields_after_comm()
+            total_ticks = int(fields[11]) + int(fields[12])  # utime + stime
+        except (OSError, ValueError, IndexError):
+            self._last_cpu = None
+            return 0.0
+        now = time.monotonic()
+        if self._last_cpu is None:
+            self._last_cpu = (total_ticks, now)
+            return 0.0
+        prev_ticks, prev_now = self._last_cpu
+        self._last_cpu = (total_ticks, now)
+        delta = now - prev_now
+        if delta <= 0:
+            return 0.0
+        return (total_ticks - prev_ticks) / _CLOCK_TICKS / delta * 100.0
+
+    def memory_info(self) -> _MemInfo:
+        try:
+            text = self._read(f"/proc/{self.pid}/status")
+        except OSError:
+            return _MemInfo(rss=0)
+        for line in text.splitlines():
+            if line.startswith("VmRSS:"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        return _MemInfo(rss=int(parts[1]) * 1024)
+                    except ValueError:
+                        return _MemInfo(rss=0)
+                break
+        return _MemInfo(rss=0)
+
+    def children(self, recursive: bool = True) -> List[_ChildRef]:
+        """Walk the host process tree rooted at self.pid via `ps -eo pid,ppid`.
+
+        One shell-out per call; the in-memory BFS that follows is cheap.
+        """
+        try:
+            r = subprocess.run(
+                host_cmd(["ps", "-eo", "pid,ppid", "--no-headers"]),
+                capture_output=True, text=True, timeout=3, check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return []
+        if r.returncode != 0:
+            return []
+        parents: dict = {}
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            try:
+                parents[int(parts[0])] = int(parts[1])
+            except ValueError:
+                continue
+        # BFS down from self.pid through `parents`.
+        descendants: set = set()
+        frontier = [self.pid]
+        while frontier:
+            cur = frontier.pop()
+            for pid, ppid in parents.items():
+                if ppid == cur and pid not in descendants and pid != self.pid:
+                    descendants.add(pid)
+                    if recursive:
+                        frontier.append(pid)
+        return [_ChildRef(p) for p in descendants]
+
+
+def _default_process_factory():
+    """Pick HostProc inside the sandbox (or when psutil is missing); else psutil.Process."""
+    if is_sandboxed() or psutil is None:
+        return HostProc
+    return psutil.Process
 
 
 def _process_meta(proc) -> dict:
@@ -66,12 +248,14 @@ def _process_meta(proc) -> dict:
 def list_running_instances(runner=None) -> List[dict]:
     """Return one dict per running flatpak sandbox via `flatpak ps`.
 
-    `runner(args) -> CompletedProcess` may be injected for tests.
+    Inside our own sandbox the call is routed through `flatpak-spawn --host`
+    so we see the host's running flatpaks, not the (empty) set inside our
+    own jail. `runner(args) -> CompletedProcess` is injectable for tests.
     """
-    args = [
+    args = host_cmd([
         "flatpak", "ps",
         "--columns=instance,pid,child-pid,application,branch",
-    ]
+    ])
     run = runner or (lambda a: subprocess.run(
         a, capture_output=True, text=True, check=False, timeout=5,
     ))
@@ -129,14 +313,14 @@ class RunningTracker:
     """
 
     def __init__(self, process_factory=None, lister=None):
-        # process_factory(pid) -> psutil.Process; injectable for tests.
+        # process_factory(pid) -> psutil.Process-shaped object. The default
+        # picks HostProc inside the sandbox (psutil's /proc reads can't see
+        # the host) and psutil.Process on the host. Tests inject a stub.
         if process_factory is None:
-            if psutil is None:
-                raise RuntimeError("psutil is not installed")
-            process_factory = psutil.Process
+            process_factory = _default_process_factory()
         self._process_factory = process_factory
         self._lister = lister or list_running_instances
-        # pid -> psutil.Process (or compatible mock)
+        # pid -> Process-shaped object (psutil.Process / HostProc / mock).
         self._proc_cache: dict = {}
 
     def sample(self) -> List[dict]:

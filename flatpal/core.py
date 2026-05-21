@@ -12,6 +12,8 @@ import subprocess
 from datetime import datetime
 from typing import Iterable, Optional
 
+from .host import host_cmd
+
 
 MONTHS = {
     m: i for i, m in enumerate(
@@ -150,7 +152,7 @@ def _run_flatpak(args, env_overrides=None, timeout: float = 10.0):
         env.update(env_overrides)
     try:
         return subprocess.run(
-            ["flatpak", *args],
+            host_cmd(["flatpak", *args]),
             capture_output=True, text=True, env=env, check=False,
             timeout=timeout,
         )
