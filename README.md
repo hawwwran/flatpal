@@ -6,6 +6,8 @@
 
 **Your friendly Flatpak overview companion.**
 
+*Released under [GPL-3.0-or-later](LICENSE).*
+
 </div>
 
 Flatpal sits next to the Flatpak apps on your machine and gives you a clear,
@@ -111,9 +113,8 @@ Drops six things into `~/.local`:
 | ------------------------------------------------------------------------- | --------------------------------- |
 | `~/.local/bin/flatpal`                                                    | Launcher on `PATH`                |
 | `~/.local/share/flatpal/flatpal/`                                         | The Python package                |
-| `~/.local/share/applications/flatpal.desktop`                             | Desktop entry (visible in launcher) |
-| `~/.local/share/icons/hicolor/{16,24,32,48,64,96,128,192,256,512}x*/apps/flatpal.png`     | Crisp icons at every native size   |
-| `~/.local/share/icons/hicolor/{16,24,32,48,64,96,128,192,256,512}x*/apps/com.hawwwran.flatpal.png` | Same icons indexed by the running window's `app_id` so the taskbar finds them |
+| `~/.local/share/applications/io.github.hawwwran.flatpal.desktop`          | Desktop entry (visible in launcher) |
+| `~/.local/share/icons/hicolor/{16,24,32,48,64,96,128,192,256,512}x*/apps/io.github.hawwwran.flatpal.png` | Crisp icons at every native size, named to match the running window's `app_id` so the taskbar finds them |
 
 After install, launch from a terminal (`flatpal`) or search "Flatpal" in
 the GNOME / Zorin activities overview.
@@ -223,3 +224,6 @@ project.
 Flatpal is a small personal-scale tool. The name "Flatpal" and the squircle
 icon are this project's; the rest of the world (Flatpak, Flathub, GNOME,
 libadwaita, the apps it lists) belongs to their respective owners.
+
+Flatpal itself is released under the **GNU General Public License v3.0 or
+later** (SPDX: `GPL-3.0-or-later`). See [`LICENSE`](LICENSE) for the full text.

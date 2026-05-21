@@ -26,7 +26,8 @@ cp -r "${SRC_DIR}/flatpal" "${PKG_DIR}"
 # Drop any stray __pycache__ left over from local runs.
 find "${PKG_DIR}" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
-install -m 0644 "${SRC_DIR}/data/flatpal.desktop" "${DESKTOP_DIR}/flatpal.desktop"
+install -m 0644 "${SRC_DIR}/data/io.github.hawwwran.flatpal.desktop" \
+  "${DESKTOP_DIR}/io.github.hawwwran.flatpal.desktop"
 
 installed_icons=()
 for size in "${ICON_SIZES[@]}"; do
@@ -34,18 +35,21 @@ for size in "${ICON_SIZES[@]}"; do
   if [[ -f "${src}" ]]; then
     dst_dir="${ICON_HICOLOR}/${size}x${size}/apps"
     mkdir -p "${dst_dir}"
-    # Two filenames per size: `flatpal.png` for the .desktop Icon= entry,
-    # `com.hawwwran.flatpal.png` so GNOME Shell can find the taskbar icon by
-    # the running window's xdg-toplevel app_id (which matches our Adw
-    # application_id).
-    install -m 0644 "${src}" "${dst_dir}/flatpal.png"
-    install -m 0644 "${src}" "${dst_dir}/com.hawwwran.flatpal.png"
-    installed_icons+=("${dst_dir}/flatpal.png")
+    # Icon filename matches both `Icon=` in the .desktop and the running
+    # window's xdg-toplevel app_id (= Adw application_id), so GNOME Shell
+    # picks up the taskbar icon without us having to install duplicates.
+    install -m 0644 "${src}" "${dst_dir}/io.github.hawwwran.flatpal.png"
+    installed_icons+=("${dst_dir}/io.github.hawwwran.flatpal.png")
   fi
 done
 
-# Clean up artefacts from earlier installs that used a single-PNG approach.
+# Clean up artefacts from earlier installs that used different naming schemes.
 rm -f "${ICON_HICOLOR}/scalable/apps/flatpal.svg"
+rm -f "${DESKTOP_DIR}/flatpal.desktop"
+for size in "${ICON_SIZES[@]}"; do
+  rm -f "${ICON_HICOLOR}/${size}x${size}/apps/flatpal.png"
+  rm -f "${ICON_HICOLOR}/${size}x${size}/apps/com.hawwwran.flatpal.png"
+done
 
 cat > "${BIN_DIR}/flatpal" <<EOF
 #!/usr/bin/env bash
@@ -64,9 +68,9 @@ fi
 echo "Installed:"
 echo "  ${BIN_DIR}/flatpal"
 echo "  ${PKG_DIR}/  (Python package)"
-echo "  ${DESKTOP_DIR}/flatpal.desktop"
+echo "  ${DESKTOP_DIR}/io.github.hawwwran.flatpal.desktop"
 echo "  ${#installed_icons[@]} icons across ${ICON_HICOLOR}/{16,24,32,48,64,96,128,192,256,512}x*"
-echo "    (each as both flatpal.png and com.hawwwran.flatpal.png)"
+echo "    (as io.github.hawwwran.flatpal.png)"
 echo
 echo "Launch with: flatpal   (or search 'Flatpal' in your launcher)"
 

@@ -447,7 +447,7 @@ _running.RunningTracker = _DemoRunningTracker
 import flatpal.app as _app_module  # noqa: E402
 import flatpal.detail as _detail   # noqa: E402
 
-_app_module.APP_ID = "com.hawwwran.flatpal.ScreenshotDemo"
+_app_module.APP_ID = "io.github.hawwwran.flatpal.ScreenshotDemo"
 
 # Detail page — bypass `flatpak info -m`; sandbox permissions panel is
 # hidden when the list is empty.

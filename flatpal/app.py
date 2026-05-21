@@ -19,7 +19,7 @@ from .installed_page import InstalledPage
 from .running_page import RunningPage
 
 
-APP_ID = "com.hawwwran.flatpal"
+APP_ID = "io.github.hawwwran.flatpal"
 
 
 class FlatpalWindow(Adw.ApplicationWindow):
