@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import json
+import re
 import shutil
 import subprocess
 import sys
@@ -36,11 +38,117 @@ except ImportError:
     yaml = None  # type: ignore
 
 
+# Known lint findings — each maps to (kind, explanation). The render layer
+# uses `kind` to colour-code and group the issues; the explanation tells the
+# maintainer why the lint is happening and what (if anything) to do.
+#
+#   resolves-at-tag : auto-fixes the moment `release-flatpal.sh` tags + pushes
+#                     a real version. No action needed.
+#   justify-in-pr   : a Flathub-flagged permission that is required for the
+#                     app to function; reviewer will accept with rationale in
+#                     the submission/update PR description.
+#   informational   : present in output but doesn't block — desktop-file
+#                     hints, AppStream notices, etc.
+LINT_CLASSIFICATIONS: dict = {
+    "screenshot-image-not-found": (
+        "resolves-at-tag",
+        "Screenshot URLs pin a tag (currently /v0.0.0/ placeholder). "
+        "release-flatpal.sh rewrites them to the new tag on release.",
+    ),
+    "url-not-reachable": (
+        "resolves-at-tag",
+        "URL becomes reachable once the repo is public and the tag is pushed.",
+    ),
+    "appid-url-not-reachable": (
+        "resolves-at-tag",
+        "Homepage URL must point at a public, reachable page. Auto-resolves "
+        "after the repo is public and the tag exists.",
+    ),
+    "finish-args-flatpak-spawn-access": (
+        "justify-in-pr",
+        "Required: app spawns host flatpak via flatpak-spawn (its whole "
+        "purpose). Flatseal precedent — justify in the PR description.",
+    ),
+    "finish-args-flatpak-system-folder-ro-access": (
+        "justify-in-pr",
+        "Required: read host AppStream cache + per-app metainfo XML from "
+        "/var/lib/flatpak. Flatseal precedent — justify in the PR description.",
+    ),
+    "finish-args-unnecessary-xdg-data-flatpak-ro-access": (
+        "justify-in-pr",
+        "Required: same as system-folder above but for the per-user install "
+        "at xdg-data/flatpak. Flatseal precedent — justify in the PR.",
+    ),
+    "module-flatpal-source-git-no-commit-with-tag": (
+        "resolves-at-tag",
+        "Per Option A in the release plan, upstream stays tag-only; "
+        "release-flatpal.sh Mode 2 pins the commit SHA on the Flathub-managed "
+        "manifest before submitting the update PR.",
+    ),
+}
+
+
+def _classify_validation(name: str, raw: str, rc: int) -> tuple[str, list[dict], list[str]]:
+    """Categorise lint findings for prettier rendering.
+
+    Returns (overall_class, known_issues, unknown_findings).
+
+    - overall_class: "ok" (nothing to worry about), "expected" (all findings
+      are in LINT_CLASSIFICATIONS), or "attention" (at least one unknown
+      finding — needs human eyes).
+    - known_issues: list of {id, kind, explanation} for findings we recognise.
+    - unknown_findings: list of finding identifiers we don't have a
+      classification for. Surfacing them prompts an update to
+      LINT_CLASSIFICATIONS or actual fixes.
+    """
+    known: list[dict] = []
+    unknown: list[str] = []
+
+    def push(lint_id: str) -> None:
+        cls = LINT_CLASSIFICATIONS.get(lint_id)
+        if cls is None:
+            unknown.append(lint_id)
+        else:
+            kind, expl = cls
+            known.append({"id": lint_id, "kind": kind, "explanation": expl})
+
+    if name.startswith("AppStream"):
+        # appstreamcli lines look like: "W: io.…flatpal:65: screenshot-image-not-found"
+        for line in raw.splitlines():
+            m = re.match(r"^[WIEH]:\s*\S+:\s*(\S+)", line)
+            if m:
+                push(m.group(1))
+
+    elif name.startswith("Flatpak manifest"):
+        # flatpak-builder-lint emits JSON {"errors":[…], "warnings":[…], …}.
+        try:
+            data = json.loads(raw)
+            for ident in data.get("errors", []) + data.get("warnings", []):
+                push(str(ident))
+        except (json.JSONDecodeError, TypeError):
+            if rc != 0:
+                unknown.append("(unparseable lint output)")
+
+    elif name.startswith("Desktop entry"):
+        # desktop-file-validate emits free-form text; rc=0 means hint-only.
+        if rc != 0:
+            unknown.append(f"desktop-file-validate rc={rc}")
+
+    if unknown:
+        overall = "attention"
+    elif known:
+        overall = "expected"
+    else:
+        overall = "ok"
+    return overall, known, unknown
+
+
 REPO = Path(__file__).resolve().parent.parent
 DATA = REPO / "data"
 METAINFO = DATA / "io.github.hawwwran.flatpal.metainfo.xml"
 DESKTOP = DATA / "io.github.hawwwran.flatpal.desktop"
 MANIFEST = REPO / "io.github.hawwwran.flatpal.yaml"
+DEV_MANIFEST = REPO / "io.github.hawwwran.flatpal.dev.yaml"
 LICENSE_FILE = REPO / "LICENSE"
 SCREENSHOT_DIR = DATA / "screenshots"
 ICON_PNG = DATA / "flatpal-icon-256x256.png"
@@ -270,6 +378,90 @@ h2.section-sub {
   background: #fbeaea;
   color: #7c2828;
   border-color: #e6a1a1;
+}
+
+.lint-summary {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lint-summary-ok {
+  font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+}
+.lint-pill {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+}
+.lint-pill.resolves-at-tag {
+  background: #d2e8ff;
+  color: #0b3a73;
+}
+.lint-pill.justify-in-pr {
+  background: #ffe1c2;
+  color: #6b3a05;
+}
+.lint-pill.attention {
+  background: #f8c8c8;
+  color: #6f1818;
+}
+
+.lint-issues {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lint-issue {
+  display: grid;
+  grid-template-columns: minmax(0, 18em) 1fr;
+  gap: 12px;
+  font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+  font-size: 0.8rem;
+  align-items: baseline;
+}
+.lint-issue .lint-id {
+  font-family: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.78rem;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 8px;
+  border-radius: 6px;
+  word-break: break-word;
+}
+.lint-issue.justify-in-pr .lint-id { background: rgba(179, 95, 5, 0.15); }
+.lint-issue.attention .lint-id { background: rgba(124, 24, 24, 0.15); }
+.lint-issue .lint-expl {
+  line-height: 1.45;
+}
+
+details.lint-raw {
+  margin-top: 8px;
+  font-family: -apple-system, "Inter", "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+}
+details.lint-raw summary {
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+}
+details.lint-raw[open] summary {
+  margin-bottom: 6px;
+}
+details.lint-raw pre {
+  font-family: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.75rem;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 8px 10px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
 }
 
 /* Hero */
@@ -587,24 +779,90 @@ footer code {
 """
 
 
-def render(info: dict, desktop: dict, manifest: dict, license_info: dict,
+def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
+           license_info: dict,
            validations: list[tuple[str, str, int]]) -> str:
     brand_light = info["branding"][0]["value"] if info["branding"] else "#e6e6e6"
     brand_dark = info["branding"][1]["value"] if len(info["branding"]) > 1 else "#1c1c1c"
     css = CSS % {"brand_light": brand_light, "brand_dark": brand_dark}
 
-    # One banner per validator: green=ok, yellow=warn/hint, red=hard error.
+    # Each banner: classify findings (resolves-at-tag / justify-in-pr /
+    # unknown), summarise visibly, keep the raw lint output behind a <details>
+    # so verbatim text is one click away when debugging.
     banner_rows = []
     for name, text, code in validations:
-        if code == 0:
+        overall, known, unknown = _classify_validation(name, text or "", code)
+
+        if overall == "ok":
             cls = "ok"
-        elif code in (2, 3):
+        elif overall == "expected":
             cls = "warn"
         else:
             cls = "fail"
+
+        if not known and not unknown:
+            summary_html = (
+                '<div class="lint-summary lint-summary-ok">Clean.</div>'
+            )
+        else:
+            n_resolves = sum(1 for i in known if i["kind"] == "resolves-at-tag")
+            n_justify = sum(1 for i in known if i["kind"] == "justify-in-pr")
+            n_unknown = len(unknown)
+
+            parts = []
+            if n_resolves:
+                parts.append(
+                    f'<span class="lint-pill resolves-at-tag">'
+                    f'{n_resolves} resolves at tag</span>'
+                )
+            if n_justify:
+                parts.append(
+                    f'<span class="lint-pill justify-in-pr">'
+                    f'{n_justify} justify in PR</span>'
+                )
+            if n_unknown:
+                parts.append(
+                    f'<span class="lint-pill attention">'
+                    f'{n_unknown} needs attention</span>'
+                )
+
+            issue_rows = []
+            for issue in known:
+                issue_rows.append(
+                    f'<li class="lint-issue {issue["kind"]}">'
+                    f'<code class="lint-id">{escape(issue["id"])}</code>'
+                    f'<span class="lint-expl">{escape(issue["explanation"])}</span>'
+                    f'</li>'
+                )
+            for ident in unknown:
+                issue_rows.append(
+                    f'<li class="lint-issue attention">'
+                    f'<code class="lint-id">{escape(ident)}</code>'
+                    f'<span class="lint-expl">Unknown lint — investigate, '
+                    f'and add to LINT_CLASSIFICATIONS in tools/preview_flathub.py '
+                    f'so future runs categorise it.</span>'
+                    f'</li>'
+                )
+
+            summary_html = (
+                f'<div class="lint-summary">{" ".join(parts)}</div>'
+                f'<ul class="lint-issues">{"".join(issue_rows)}</ul>'
+            )
+
+        # Raw output is folded into a <details> so the banner stays scannable.
+        raw_html = ""
+        if text and text.strip():
+            raw_html = (
+                f'<details class="lint-raw"><summary>raw lint output</summary>'
+                f'<pre>{escape(text)}</pre></details>'
+            )
+
         banner_rows.append(
-            f'<div class="banner {cls}"><strong>{escape(name)}</strong>\n'
-            f'{escape(text or "OK")}</div>'
+            f'<div class="banner {cls}">'
+            f'<strong>{escape(name)}</strong>'
+            f'{summary_html}'
+            f'{raw_html}'
+            f'</div>'
         )
     banners_html = "\n".join(banner_rows)
 
@@ -774,6 +1032,53 @@ def render(info: dict, desktop: dict, manifest: dict, license_info: dict,
     else:
         manifest_card = ""
 
+    # Dev-manifest card — same shape as the canonical manifest but tighter,
+    # because the only thing that differs is the source override (type: dir
+    # instead of type: git). Surfaced so the maintainer can sanity-check the
+    # local-build setup at a glance.
+    if dev_manifest:
+        dev_top_rows = []
+        for key in ("app-id", "runtime", "runtime-version", "sdk", "command"):
+            if key in dev_manifest:
+                dev_top_rows.append(
+                    f'<tr><th>{escape(key)}</th>'
+                    f'<td>{escape(str(dev_manifest[key]))}</td></tr>'
+                )
+        dev_module_blocks = []
+        for m in dev_manifest.get("modules", []) or []:
+            name = escape(str(m.get("name", "")))
+            bs = escape(str(m.get("buildsystem", "—")))
+            src_lines = []
+            for s in m.get("sources", []) or []:
+                src_lines.append(
+                    "<dl class=\"source\">" +
+                    "".join(
+                        f'<dt>{escape(k)}</dt><dd><code>{escape(str(v))}</code></dd>'
+                        for k, v in s.items()
+                    ) +
+                    "</dl>"
+                )
+            dev_module_blocks.append(
+                f'<div class="module"><h3>{name} '
+                f'<span class="meta">({bs})</span></h3>'
+                f'{"".join(src_lines)}</div>'
+            )
+        dev_manifest_card = (
+            f'<section class="card"><h2>Dev manifest '
+            f'<span style="font-size:0.7em;color:var(--muted);font-weight:400">'
+            f'(local-build override, not seen by Flathub)</span></h2>'
+            f'<p style="margin:0 0 12px;color:var(--muted);font-size:0.9rem">'
+            f'Used by <code>release-flatpal.sh</code> Mode 1 and §9 lint runs. '
+            f'Same finish-args as the canonical manifest above; only the source '
+            f'differs — <code>type: dir, path: .</code> so flatpak-builder copies '
+            f'the working tree instead of cloning a tag.</p>'
+            f'<table class="kv">{"".join(dev_top_rows)}</table>'
+            f'<h2 class="section-sub">Modules ({len(dev_manifest.get("modules") or [])})</h2>'
+            f'{"".join(dev_module_blocks)}</section>'
+        )
+    else:
+        dev_manifest_card = ""
+
     # LICENSE card — title, line count, file size, head excerpt.
     if license_info:
         head_html = "".join(
@@ -829,16 +1134,27 @@ def render(info: dict, desktop: dict, manifest: dict, license_info: dict,
         f"</section>"
         f'<section class="card"><h2>Branding colors</h2>'
         f'<div class="branding">{branding_html}</div></section>'
-        f'<section class="card"><h2>Releases ({len(info["releases"])})</h2>'
-        f"{releases_html}</section>"
-        f"{desktop_card}"
-        f"{manifest_card}"
-        f"{license_card}"
-        f"<footer>Generated from <code>{escape(METAINFO.name)}</code>, "
-        f"<code>{escape(DESKTOP.name)}</code>, "
-        f"<code>{escape(MANIFEST.name)}</code>, and <code>LICENSE</code>. "
-        f"Refresh with <code>python3 tools/preview_flathub.py</code>.</footer>"
-        f"</div></body></html>"
+        + (
+            f'<section class="card"><h2>Releases ({len(info["releases"])})</h2>'
+            f"{releases_html}</section>"
+            if info["releases"]
+            else
+            f'<section class="card"><h2>Releases</h2>'
+            f'<p style="margin:0;color:var(--muted)">No releases yet — the '
+            f'<code>&lt;releases&gt;</code> block in the metainfo is empty. '
+            f'<code>release-flatpal.sh</code> prepends a <code>&lt;release&gt;</code> '
+            f'entry to the metainfo for each tagged release.</p></section>'
+        )
+        + f"{desktop_card}"
+        + f"{manifest_card}"
+        + f"{dev_manifest_card}"
+        + f"{license_card}"
+        + f"<footer>Generated from <code>{escape(METAINFO.name)}</code>, "
+        + f"<code>{escape(DESKTOP.name)}</code>, "
+        + f"<code>{escape(MANIFEST.name)}</code> + <code>{escape(DEV_MANIFEST.name)}</code>, "
+        + f"and <code>LICENSE</code>. "
+        + f"Refresh with <code>python3 tools/preview_flathub.py</code>.</footer>"
+        + f"</div></body></html>"
     )
 
 
@@ -892,14 +1208,39 @@ def run_validators() -> list[tuple[str, str, int]]:
     except FileNotFoundError:
         out.append(("Desktop entry", "desktop-file-validate not installed — skipping", -1))
 
-    # Flatpak manifest. flatpak-builder-lint lives inside org.flatpak.Builder;
-    # surfacing the gap rather than silently skipping.
-    out.append((
-        "Flatpak manifest",
-        "flatpak-builder-lint runs inside the org.flatpak.Builder flatpak — "
-        "deferred to §9 local validation. YAML parse OK if this card renders.",
-        2,
-    ))
+    # Flatpak manifest. flatpak-builder-lint lives inside org.flatpak.Builder
+    # (`flatpak install --user flathub org.flatpak.Builder`). If installed,
+    # we run the real lint; otherwise we surface the gap.
+    builder_check = subprocess.run(
+        ["flatpak", "--user", "info", "org.flatpak.Builder"],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    if builder_check.returncode == 0:
+        try:
+            r = subprocess.run(
+                [
+                    "flatpak", "run", "--user",
+                    "--command=flatpak-builder-lint", "org.flatpak.Builder",
+                    "manifest", str(MANIFEST),
+                ],
+                capture_output=True, text=True, timeout=60,
+            )
+            text = (r.stdout + r.stderr).strip() or "OK"
+            out.append(
+                ("Flatpak manifest  (flatpak-builder-lint manifest)", text, r.returncode)
+            )
+        except FileNotFoundError:
+            out.append(("Flatpak manifest", "flatpak CLI not on PATH — skipping", -1))
+        except subprocess.TimeoutExpired:
+            out.append(("Flatpak manifest", "timed out (>60s)", -1))
+    else:
+        out.append((
+            "Flatpak manifest",
+            "org.flatpak.Builder not installed — run "
+            "`flatpak install --user -y flathub org.flatpak.Builder` to enable "
+            "the manifest lint here.",
+            2,
+        ))
 
     return out
 
@@ -928,10 +1269,11 @@ def main() -> int:
     info = parse_metainfo(METAINFO)
     desktop = parse_desktop(DESKTOP)
     manifest = parse_manifest(MANIFEST)
+    dev_manifest = parse_manifest(DEV_MANIFEST)
     license_info = license_summary(LICENSE_FILE)
     validations = run_validators()
     PREVIEW.write_text(
-        render(info, desktop, manifest, license_info, validations),
+        render(info, desktop, manifest, dev_manifest, license_info, validations),
         encoding="utf-8",
     )
 
