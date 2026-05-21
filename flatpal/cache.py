@@ -1,7 +1,8 @@
 """On-disk cache for screenshot images.
 
 The detail page asks for the same screenshot URL repeatedly across visits; we
-download once and reuse. Cache is under ~/.cache/flatpal/screenshots/.
+download once and reuse. Cache lives under $XDG_CACHE_HOME/flatpal/screenshots/
+(== ~/.cache/flatpal/screenshots/ when the variable isn't set).
 """
 
 from __future__ import annotations
@@ -14,7 +15,23 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-CACHE_DIR = Path(os.path.expanduser("~/.cache/flatpal/screenshots"))
+
+def _default_cache_dir() -> Path:
+    """XDG-respecting cache directory.
+
+    Inside the Flatpak sandbox Flatpak sets $XDG_CACHE_HOME to the per-app
+    persistent location (`~/.var/app/<APP_ID>/cache` on the host); on the
+    raw host (`./install.sh` dev mode) it's typically unset so we fall back
+    to `~/.cache`. Hardcoding `~/.cache` worked in dev but inside the
+    sandbox writes land in an ephemeral overlay over a non-existent
+    `~/.cache` and never persist — so downloaded screenshots got re-fetched
+    every detail-page visit and stale-cache cleanup did nothing.
+    """
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return Path(base) / "flatpal" / "screenshots"
+
+
+CACHE_DIR = _default_cache_dir()
 
 _VALID_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"}
 
