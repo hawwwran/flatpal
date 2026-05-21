@@ -1,4 +1,4 @@
-"""Running-flatpaks tab — live CPU/RSS per running app, refreshed every 2 s."""
+"""Running-flatpaks tab — live CPU/memory per running app, refreshed every 2 s."""
 
 from __future__ import annotations
 
@@ -12,7 +12,15 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from .constants import REFRESH_MS
-from .running import RunningTracker, format_cpu, format_memory, sort_running
+from .running import (
+    RunningTracker,
+    format_cpu,
+    format_memory,
+    format_relative_time,
+    order_with_freeze,
+    sort_running,
+)
+from .widgets import make_freeze_pill, make_sort_pill
 
 
 # Line the status row + dropdown up with the boxed-list rows below.
@@ -25,45 +33,252 @@ INTERVAL_OPTIONS_SEC = (1, 2, 5, 10, 30)
 INTERVAL_LABELS = tuple(f"{s} s" for s in INTERVAL_OPTIONS_SEC)
 
 
+_SORT_LABELS = {"cpu": "CPU", "memory": "memory", "name": "name"}
+
+
+def _build_app_icon(display, app_id: str) -> Gtk.Image:
+    """Themed app icon, 48px, falling back to a generic when the theme has no match."""
+    icon = Gtk.Image.new_from_icon_name(app_id)
+    icon.set_pixel_size(48)
+    if not Gtk.IconTheme.get_for_display(display).has_icon(app_id):
+        icon.set_from_icon_name("application-x-executable")
+    return icon
+
+
+def _build_stats_box(
+    cpu_percent: float, memory_bytes: int,
+) -> tuple[Gtk.Box, Gtk.Label, Gtk.Label]:
+    """Stacked CPU + memory labels — returns (box, cpu_label, mem_label).
+
+    Callers hold onto the label refs so they can mutate them in place on the
+    next sample, instead of throwing the whole row away. Keeping widgets alive
+    is what lets the tooltip survive across refreshes.
+    """
+    meta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    meta.set_valign(Gtk.Align.CENTER)
+    meta.set_halign(Gtk.Align.END)
+
+    cpu_label = Gtk.Label(label=f"CPU {format_cpu(cpu_percent)}")
+    cpu_label.add_css_class("caption")
+    cpu_label.add_css_class("numeric")
+    cpu_label.set_halign(Gtk.Align.END)
+    meta.append(cpu_label)
+
+    mem_label = Gtk.Label(label=f"Memory {format_memory(memory_bytes)}")
+    mem_label.add_css_class("caption")
+    mem_label.add_css_class("numeric")
+    mem_label.add_css_class("dim-label")
+    mem_label.set_halign(Gtk.Align.END)
+    meta.append(mem_label)
+    return meta, cpu_label, mem_label
+
+
+def _update_stats(
+    cpu_label: Gtk.Label, mem_label: Gtk.Label,
+    cpu_percent: float, memory_bytes: int,
+) -> None:
+    cpu_label.set_label(f"CPU {format_cpu(cpu_percent)}")
+    mem_label.set_label(f"Memory {format_memory(memory_bytes)}")
+
+
+def _app_title(row: dict, installed: Optional[dict]) -> str:
+    name = (installed or {}).get("name") or row["id"]
+    return GLib.markup_escape_text(name)
+
+
+def _app_subtitle(row: dict) -> str:
+    bits = [row["id"]]
+    count = row.get("instances", 1)
+    if count > 1:
+        # "sandboxes" makes it explicit that this counts independent flatpak
+        # sandbox processes — not windows. Single-instance GTK apps (most of
+        # them) keep all their windows in one sandbox no matter how many.
+        bits.append(f"{count} sandboxes")
+    return GLib.markup_escape_text(" • ".join(bits))
+
+
+def _sub_title_markup(cmdline, comm, pid) -> str:
+    """Pango markup for the sub-row title: bold argv[0] basename + the rest.
+
+    Adw.ActionRow titles render markup by default and ellipsize at end on a
+    single line, so the full command is visible up to the row's width.
+    """
+    cmd = [s for s in (cmdline or []) if s]
+    if cmd:
+        head = cmd[0].rsplit("/", 1)[-1] or cmd[0]
+        head_markup = f"<b>{GLib.markup_escape_text(head)}</b>"
+        if len(cmd) > 1:
+            rest = " ".join(cmd[1:])
+            return f"{head_markup} {GLib.markup_escape_text(rest)}"
+        return head_markup
+    if comm:
+        return f"<b>{GLib.markup_escape_text(str(comm))}</b>"
+    return GLib.markup_escape_text(f"Process {pid if pid is not None else '?'}")
+
+
+class _SubInstanceRow(Adw.ActionRow):
+    """One sub-row inside RunningExpanderRow, showing a single sandbox.
+
+    The title and tooltip are derived from cmdline (constant for the life of
+    the process), so we set them once in __init__. Only the subtitle and
+    stats labels change between ticks; `update()` mutates them in place so
+    the row's tooltip survives mouse hover.
+    """
+
+    def __init__(self, sub: dict):
+        super().__init__()
+        self.pid = sub.get("pid")
+
+        cmdline = sub.get("cmdline")
+        self.set_title(_sub_title_markup(cmdline, sub.get("comm"), self.pid))
+        # Adw.ActionRow's default lets long titles wrap to multiple lines and
+        # push the row taller. Force a single line so end-ellipsis kicks in.
+        self.set_title_lines(1)
+
+        full_cmd = " ".join(s for s in (cmdline or []) if s)
+        if full_cmd:
+            self.set_tooltip_text(full_cmd)
+
+        stats_box, self._cpu_label, self._mem_label = _build_stats_box(
+            sub.get("cpu_percent", 0.0), sub.get("memory_bytes", 0),
+        )
+        self.add_suffix(stats_box)
+
+        self.update(sub)
+
+    def update(self, sub: dict) -> None:
+        bits = [f"PID {sub.get('pid', '?')}"]
+        rel = format_relative_time(sub.get("started_at"))
+        if rel:
+            bits.append(f"started {rel}")
+        branch = sub.get("branch")
+        if branch and branch != "stable":
+            bits.append(branch)
+        self.set_subtitle(GLib.markup_escape_text(" · ".join(bits)))
+        _update_stats(
+            self._cpu_label, self._mem_label,
+            sub.get("cpu_percent", 0.0), sub.get("memory_bytes", 0),
+        )
+
+
 class RunningRow(Adw.ActionRow):
+    """Single-sandbox row. Click anywhere → opens the detail page.
+
+    `update(row)` mutates the title/subtitle/stats in place; the icon is set
+    once because it depends on app_id which is stable for the row's lifetime.
+    """
+
     def __init__(self, row: dict, installed_lookup: Callable[[str], Optional[dict]]):
         super().__init__()
-        self.row = row
         self.app_id = row["id"]
-
-        installed = installed_lookup(row["id"]) if installed_lookup else None
-        name = (installed or {}).get("name") or row["id"]
-        self.set_title(GLib.markup_escape_text(name))
-
-        subtitle_bits = [row["id"]]
-        if row["instances"] > 1:
-            subtitle_bits.append(f"{row['instances']} instances")
-        self.set_subtitle(GLib.markup_escape_text(" • ".join(subtitle_bits)))
+        self._installed_lookup = installed_lookup
         self.set_activatable(True)
 
-        icon = Gtk.Image.new_from_icon_name(row["id"])
-        icon.set_pixel_size(48)
-        if not Gtk.IconTheme.get_for_display(self.get_display()).has_icon(row["id"]):
-            icon.set_from_icon_name("application-x-executable")
-        self.add_prefix(icon)
+        self.add_prefix(_build_app_icon(self.get_display(), row["id"]))
+        stats_box, self._cpu_label, self._mem_label = _build_stats_box(
+            row["cpu_percent"], row["memory_bytes"],
+        )
+        self.add_suffix(stats_box)
+        self.update(row)
 
-        meta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        meta.set_valign(Gtk.Align.CENTER)
-        meta.set_halign(Gtk.Align.END)
+    def update(self, row: dict) -> None:
+        installed = self._installed_lookup(row["id"]) if self._installed_lookup else None
+        self.set_title(_app_title(row, installed))
+        self.set_subtitle(_app_subtitle(row))
+        _update_stats(
+            self._cpu_label, self._mem_label,
+            row["cpu_percent"], row["memory_bytes"],
+        )
 
-        cpu_label = Gtk.Label(label=f"CPU {format_cpu(row['cpu_percent'])}")
-        cpu_label.add_css_class("caption")
-        cpu_label.add_css_class("numeric")
-        cpu_label.set_halign(Gtk.Align.END)
-        meta.append(cpu_label)
 
-        mem_label = Gtk.Label(label=f"RSS {format_memory(row['memory_bytes'])}")
-        mem_label.add_css_class("caption")
-        mem_label.add_css_class("numeric")
-        mem_label.add_css_class("dim-label")
-        mem_label.set_halign(Gtk.Align.END)
-        meta.append(mem_label)
-        self.add_suffix(meta)
+class RunningExpanderRow(Adw.ExpanderRow):
+    """Multi-sandbox row. Body click toggles the expander; suffix arrow opens detail.
+
+    Sub-rows are kept in `_sub_cache` keyed by PID so a refresh updates each
+    sub-row's stats in place instead of destroying and recreating it. New
+    sandboxes are appended; vanished ones removed; existing ones mutated.
+    """
+
+    def __init__(
+        self,
+        row: dict,
+        installed_lookup: Callable[[str], Optional[dict]],
+        on_open_detail: Callable[[str], None],
+    ):
+        super().__init__()
+        self.app_id = row["id"]
+        self._installed_lookup = installed_lookup
+        # pid → _SubInstanceRow. Kept across ticks; hover-tooltips survive.
+        self._sub_cache: dict = {}
+
+        self.add_prefix(_build_app_icon(self.get_display(), row["id"]))
+        stats_box, self._cpu_label, self._mem_label = _build_stats_box(
+            row["cpu_percent"], row["memory_bytes"],
+        )
+        self.add_suffix(stats_box)
+
+        # Body click toggles the expander, so we need a dedicated affordance to
+        # reach the detail page. Flat icon button keeps it visually quiet
+        # alongside the expander chevron that Adw.ExpanderRow draws.
+        open_btn = Gtk.Button.new_from_icon_name("go-next-symbolic")
+        open_btn.add_css_class("flat")
+        open_btn.set_valign(Gtk.Align.CENTER)
+        open_btn.set_tooltip_text("Open details page")
+        open_btn.connect("clicked", lambda _b: on_open_detail(self.app_id))
+        self.add_suffix(open_btn)
+
+        self.update(row)
+
+    def update(self, row: dict) -> None:
+        installed = self._installed_lookup(row["id"]) if self._installed_lookup else None
+        self.set_title(_app_title(row, installed))
+        self.set_subtitle(_app_subtitle(row))
+        self.set_tooltip_text(
+            f"{row.get('instances', 1)} separate flatpak sandboxes are running "
+            "for this app. Each one is a distinct process tree — expand the "
+            "row to see per-sandbox CPU and memory."
+        )
+        _update_stats(
+            self._cpu_label, self._mem_label,
+            row["cpu_percent"], row["memory_bytes"],
+        )
+
+        # Sub-row diff: update existing by PID, append new ones, remove
+        # vanished ones. Sub-instances are sorted by started_at in
+        # running.py, so newly-arrived sandboxes naturally end up last —
+        # which is also where add_row puts them.
+        new_subs = row.get("sub_instances", [])
+        new_pids = {s["pid"] for s in new_subs}
+        for pid in list(self._sub_cache.keys()):
+            if pid not in new_pids:
+                widget = self._sub_cache.pop(pid)
+                try:
+                    self.remove(widget)
+                except Exception:
+                    pass
+        for sub in new_subs:
+            pid = sub["pid"]
+            existing = self._sub_cache.get(pid)
+            if existing is not None:
+                existing.update(sub)
+            else:
+                new_sub = _SubInstanceRow(sub)
+                self._sub_cache[pid] = new_sub
+                self.add_row(new_sub)
+
+
+def make_running_row(
+    row: dict,
+    installed_lookup: Callable[[str], Optional[dict]],
+    on_open_detail: Callable[[str], None],
+):
+    if row.get("instances", 1) > 1:
+        return RunningExpanderRow(row, installed_lookup, on_open_detail)
+    return RunningRow(row, installed_lookup)
+
+
+def _expected_row_type(row: dict):
+    return RunningExpanderRow if row.get("instances", 1) > 1 else RunningRow
 
 
 class RunningPage(Gtk.Box):
@@ -79,9 +294,20 @@ class RunningPage(Gtk.Box):
         self._on_interval_changed = on_interval_changed
         self._tracker: Optional[RunningTracker] = None
         self._timeout_id: Optional[int] = None
-        self._sort_by = "cpu"  # default — highest-CPU on top
+        self._sort_by = "cpu"  # current sort key; persisted via set_sort
         self._sample_in_flight = False  # one sampler at a time
         self._interval_seconds = REFRESH_MS // 1000  # mutable via set_interval()
+        # Last sampled+enriched rows, kept so set_sort and the freeze toggle
+        # can re-render instantly without waiting for the next sample.
+        self._last_rows: list[dict] = []
+        # Position-freeze state. When True, _render_rows reuses _rendered_order
+        # to keep apps in place across refreshes; new apps are appended in
+        # natural sort order, vanished apps drop out.
+        self._freeze_position = False
+        self._rendered_order: list[str] = []
+        # Row widgets kept across ticks. Keeping them alive prevents the
+        # tooltip-on-hover from dying every 2 s when the listbox is rebuilt.
+        self._row_cache: dict = {}
 
         # Status row: "N apps running …" on the left, refresh-interval picker on the right.
         # Use Gtk.CenterBox (not Gtk.Box+hexpand) so children DON'T need hexpand
@@ -101,7 +327,32 @@ class RunningPage(Gtk.Box):
         self.status_label.add_css_class("caption")
         self.status_label.set_halign(Gtk.Align.START)
         self.status_label.set_xalign(0.0)
-        status_row.set_start_widget(self.status_label)
+
+        # Brand-purple sort pill. Updated by _render_rows whenever sort changes.
+        self.sort_pill = make_sort_pill()
+
+        # Freeze-position toggle: blue when on, gray when off. Pins the
+        # current order so CPU/memory swings don't shuffle the list while the
+        # user is reading it.
+        self.freeze_pill = make_freeze_pill(
+            self._on_freeze_toggled,
+            initial=self._freeze_position,
+        )
+
+        # "Collapse all": visible only while at least one ExpanderRow is open.
+        self.collapse_btn = Gtk.Button(label="Collapse all")
+        self.collapse_btn.add_css_class("flat")
+        self.collapse_btn.add_css_class("caption")
+        self.collapse_btn.set_valign(Gtk.Align.CENTER)
+        self.collapse_btn.set_visible(False)
+        self.collapse_btn.connect("clicked", self._on_collapse_all_clicked)
+
+        start_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        start_box.append(self.status_label)
+        start_box.append(self.sort_pill)
+        start_box.append(self.freeze_pill)
+        start_box.append(self.collapse_btn)
+        status_row.set_start_widget(start_box)
 
         interval_caption = Gtk.Label(label="Refresh")
         interval_caption.add_css_class("dim-label")
@@ -114,7 +365,7 @@ class RunningPage(Gtk.Box):
             )
         except ValueError:
             self._interval_dropdown.set_selected(INTERVAL_OPTIONS_SEC.index(2))
-        self._interval_dropdown.set_tooltip_text("How often to re-sample CPU and RSS")
+        self._interval_dropdown.set_tooltip_text("How often to re-sample CPU and memory")
         self._interval_dropdown.connect(
             "notify::selected", self._on_interval_dropdown_changed
         )
@@ -135,9 +386,9 @@ class RunningPage(Gtk.Box):
         empty.set_vexpand(True)
         self.stack.add_named(empty, "empty")
 
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self._scrolled = Gtk.ScrolledWindow()
+        self._scrolled.set_vexpand(True)
+        self._scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
 
         self.listbox = Gtk.ListBox()
         self.listbox.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -148,8 +399,8 @@ class RunningPage(Gtk.Box):
         self.listbox.set_margin_end(12)
         self.listbox.set_hexpand(True)
         self.listbox.connect("row-activated", self._on_listbox_row_activated)
-        scrolled.set_child(self.listbox)
-        self.stack.add_named(scrolled, "list")
+        self._scrolled.set_child(self.listbox)
+        self.stack.add_named(self._scrolled, "list")
         self.stack.set_visible_child_name("empty")
 
         # Single outer Adw.Clamp wrapping status_row + stack so both share the
@@ -163,8 +414,14 @@ class RunningPage(Gtk.Box):
 
         outer_clamp = Adw.Clamp()
         outer_clamp.set_maximum_size(LIST_MAX_WIDTH)
+        # tightening_threshold = max disables AdwClamp's cubic-ease window so
+        # the child width is purely min(for_size, max). Combined with hexpand,
+        # the result is "fixed at max on wide windows; shrinks linearly only
+        # when the window itself is narrower than max." See explore_page.py.
+        outer_clamp.set_tightening_threshold(LIST_MAX_WIDTH)
         outer_clamp.set_child(outer_box)
         outer_clamp.set_vexpand(True)
+        outer_clamp.set_hexpand(True)
         self.append(outer_clamp)
 
     # ----- public API ------------------------------------------------------
@@ -191,10 +448,18 @@ class RunningPage(Gtk.Box):
         self._refresh()
 
     def set_sort(self, key: str) -> None:
+        """User-driven sort change. Re-renders from the cached sample."""
         if key == self._sort_by:
             return
         self._sort_by = key
-        self._refresh()
+        # A new sort retires the previously-frozen order — the user explicitly
+        # asked for a different layout, so honour it. The render captures a
+        # new order; if freeze is still on, that new order becomes the pin.
+        self._rendered_order = []
+        if self._last_rows:
+            self._render_rows(self._last_rows)
+        else:
+            self._refresh()
 
     def set_interval(self, seconds: int) -> None:
         """Change the sampling interval. Restarts the timer if running."""
@@ -252,36 +517,154 @@ class RunningPage(Gtk.Box):
         for row in rows:
             installed = self._installed_lookup(row["id"]) if self._installed_lookup else None
             row["display_name"] = (installed or {}).get("name") or row["id"]
-        rows = sort_running(rows, self._sort_by)
+        # Cache the enriched rows so set_sort / expand handlers can re-render
+        # instantly without waiting for the next sample.
+        self._last_rows = list(rows)
+        self._render_rows(rows)
+        return False
 
-        self._clear_listbox()
-        for row in rows:
-            self.listbox.append(RunningRow(row, self._installed_lookup))
+    def _render_rows(self, rows: list) -> None:
+        """Diff the listbox against the new sample.
 
-        if rows:
-            self.stack.set_visible_child_name("list")
-            total_cpu = sum(r["cpu_percent"] for r in rows)
-            total_mem = sum(r["memory_bytes"] for r in rows)
-            sort_label = {
-                "cpu": "CPU", "memory": "memory", "name": "name",
-            }.get(self._sort_by, "CPU")
-            self.status_label.set_label(
-                f"{len(rows)} app{'s' if len(rows) != 1 else ''} running · "
-                f"{format_cpu(total_cpu)} CPU · {format_memory(total_mem)} RSS · "
-                f"sorted by {sort_label}"
+        Keeps each row widget alive across ticks (cached by app_id) so an
+        in-flight hover-tooltip survives the refresh. Restructures the
+        listbox only when the order or the set of running apps changes —
+        which means tooltips, hover states, and expander disclosure are
+        all stable during a typical refresh.
+
+        Called from _on_sample_done after every tick, and from set_sort /
+        freeze-toggle to re-render the cached sample.
+        """
+        natural = lambda r: sort_running(r, self._sort_by)  # noqa: E731
+        if self._freeze_position and self._rendered_order:
+            sorted_rows = order_with_freeze(
+                list(rows), self._rendered_order, natural,
             )
+        else:
+            sorted_rows = natural(list(rows))
+        self._rendered_order = [r["id"] for r in sorted_rows]
+
+        new_data_by_id = {r["id"]: r for r in sorted_rows}
+        new_ids = set(new_data_by_id.keys())
+
+        # 1) Apps that vanished from the bus → drop their widgets.
+        for app_id in list(self._row_cache.keys()):
+            if app_id not in new_ids:
+                widget = self._row_cache.pop(app_id)
+                try:
+                    self.listbox.remove(widget)
+                except Exception:
+                    pass
+
+        # 2) Apps whose sandbox count flipped between 1 and >1 need a
+        #    different widget class (ActionRow ↔ ExpanderRow). Evict and
+        #    let step 4 recreate them.
+        for app_id in list(self._row_cache.keys()):
+            if not isinstance(
+                self._row_cache[app_id], _expected_row_type(new_data_by_id[app_id])
+            ):
+                widget = self._row_cache.pop(app_id)
+                try:
+                    self.listbox.remove(widget)
+                except Exception:
+                    pass
+
+        # 3) Decide whether we can update in place.
+        current_order = [w.app_id for w in self._iter_row_widgets()]
+        if current_order == self._rendered_order and current_order:
+            # Hot path: same apps, same order. Mutate each row's labels.
+            # No listbox structural change — tooltips and hover states all
+            # survive the refresh.
+            for app_id in self._rendered_order:
+                self._row_cache[app_id].update(new_data_by_id[app_id])
+        else:
+            # Cold path: order changed or rows added. Detach existing
+            # (widgets stay alive via the cache), then re-append in the new
+            # order, updating or creating each.
+            for widget in list(self._iter_row_widgets()):
+                self.listbox.remove(widget)
+            for app_id in self._rendered_order:
+                existing = self._row_cache.get(app_id)
+                if existing is not None:
+                    existing.update(new_data_by_id[app_id])
+                else:
+                    existing = make_running_row(
+                        new_data_by_id[app_id],
+                        self._installed_lookup,
+                        self._on_row_activated,
+                    )
+                    if isinstance(existing, Adw.ExpanderRow):
+                        existing.connect(
+                            "notify::expanded", self._on_expander_toggled,
+                        )
+                    self._row_cache[app_id] = existing
+                self.listbox.append(existing)
+
+        # 4) Status row + pill + empty stack.
+        if sorted_rows:
+            self.stack.set_visible_child_name("list")
+            total_cpu = sum(r["cpu_percent"] for r in sorted_rows)
+            total_mem = sum(r["memory_bytes"] for r in sorted_rows)
+            self.status_label.set_label(
+                f"{len(sorted_rows)} app{'s' if len(sorted_rows) != 1 else ''} "
+                f"running · {format_cpu(total_cpu)} CPU · "
+                f"{format_memory(total_mem)} memory"
+            )
+            self.sort_pill.set_visible(True)
         else:
             self.stack.set_visible_child_name("empty")
             self.status_label.set_label("")
-        return False
+            self.sort_pill.set_visible(False)
 
-    def _clear_listbox(self):
+        self.sort_pill.set_label(
+            f"sorted by {_SORT_LABELS.get(self._sort_by, 'CPU')}"
+        )
+        self._update_collapse_button()
+
+    def _iter_row_widgets(self):
         child = self.listbox.get_first_child()
         while child is not None:
-            nxt = child.get_next_sibling()
-            self.listbox.remove(child)
-            child = nxt
+            if hasattr(child, "app_id"):
+                yield child
+            child = child.get_next_sibling()
+
+    def _update_collapse_button(self) -> None:
+        self.collapse_btn.set_visible(self._any_expanded())
+
+    def _any_expanded(self) -> bool:
+        child = self.listbox.get_first_child()
+        while child is not None:
+            if isinstance(child, Adw.ExpanderRow) and child.get_expanded():
+                return True
+            child = child.get_next_sibling()
+        return False
+
+    # ----- expander + freeze callbacks ----------------------------------
+
+    def _on_expander_toggled(self, _row, _pspec) -> None:
+        # Body click toggles the expander; we no longer touch sort or
+        # scroll. The only side-effect is showing/hiding "Collapse all".
+        self._update_collapse_button()
+
+    def _on_freeze_toggled(self, active: bool) -> None:
+        self._freeze_position = active
+        # Force an immediate re-render so the toggle's effect is visible
+        # without waiting for the next sample. ON: locks the current order.
+        # OFF: returns to natural sort.
+        if self._last_rows:
+            self._render_rows(self._last_rows)
+
+    def _on_collapse_all_clicked(self, _btn) -> None:
+        child = self.listbox.get_first_child()
+        while child is not None:
+            if isinstance(child, Adw.ExpanderRow) and child.get_expanded():
+                child.set_expanded(False)
+            child = child.get_next_sibling()
 
     def _on_listbox_row_activated(self, _listbox, row):
+        # ExpanderRow consumes its own body clicks for toggling; the suffix
+        # arrow button is the path to the detail page for multi-instance apps.
+        if isinstance(row, Adw.ExpanderRow):
+            return
         if hasattr(row, "app_id"):
             self._on_row_activated(row.app_id)

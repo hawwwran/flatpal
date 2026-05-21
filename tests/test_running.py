@@ -9,7 +9,9 @@ from flatpal.running import (
     aggregate_by_app,
     format_cpu,
     format_memory,
+    format_relative_time,
     list_running_instances,
+    order_with_freeze,
     sort_running,
 )
 
@@ -97,14 +99,31 @@ class _FakeProcess:
     Mimics real psutil semantics: the FIRST call to cpu_percent returns 0.0
     (baseline) without consuming the sequence; subsequent calls pop the
     queued values. This matches how `_get_process` primes new entries.
+
+    Optional fixture fields: cmdline_seq (list of strings), comm (process
+    short name), create_time (unix epoch seconds). Each is exposed via the
+    method shape psutil uses; `RunningTracker._process_meta` reads them on
+    every sample to enrich sub_instance rows.
     """
 
-    def __init__(self, pid, cpu_seq=None, rss=10 * 1024 * 1024, children=None):
+    def __init__(
+        self,
+        pid,
+        cpu_seq=None,
+        rss=10 * 1024 * 1024,
+        children=None,
+        cmdline_seq=None,
+        comm=None,
+        create_time=None,
+    ):
         self.pid = pid
         self._cpu_seq = list(cpu_seq or [])
         self._rss = rss
         self._children = children or []
         self._primed = False
+        self._cmdline = list(cmdline_seq) if cmdline_seq else None
+        self._comm = comm
+        self._create_time = create_time
 
     def cpu_percent(self, interval=None):
         if not self._primed:
@@ -119,6 +138,21 @@ class _FakeProcess:
 
     def children(self, recursive=False):
         return list(self._children)
+
+    def cmdline(self):
+        if self._cmdline is None:
+            raise AttributeError("cmdline not set in fixture")
+        return list(self._cmdline)
+
+    def name(self):
+        if self._comm is None:
+            raise AttributeError("comm not set in fixture")
+        return self._comm
+
+    def create_time(self):
+        if self._create_time is None:
+            raise AttributeError("create_time not set in fixture")
+        return float(self._create_time)
 
 
 class TestRunningTracker(unittest.TestCase):
@@ -150,10 +184,19 @@ class TestRunningTracker(unittest.TestCase):
         self.assertEqual(len(first), 1)
         self.assertEqual(first[0]["id"], "org.example")
         self.assertEqual(first[0]["memory_bytes"], 90 * 1024 * 1024)
+        # Single-instance app: one sub-instance entry whose totals match the row.
+        self.assertEqual(len(first[0]["sub_instances"]), 1)
+        self.assertEqual(first[0]["sub_instances"][0]["pid"], 100)
+        self.assertEqual(
+            first[0]["sub_instances"][0]["memory_bytes"], 90 * 1024 * 1024,
+        )
 
         second = tracker.sample()
         # Sum of next cpu_seq values: 8 + 12 = 20
         self.assertAlmostEqual(second[0]["cpu_percent"], 20.0)
+        self.assertAlmostEqual(
+            second[0]["sub_instances"][0]["cpu_percent"], 20.0,
+        )
 
     def test_multiple_instances_of_same_app_sum_together(self):
         a = _FakeProcess(1, cpu_seq=[1.0, 5.0], rss=10 * 1024 * 1024)
@@ -174,6 +217,42 @@ class TestRunningTracker(unittest.TestCase):
         self.assertEqual(row["memory_bytes"], 30 * 1024 * 1024)
         self.assertAlmostEqual(row["cpu_percent"], 12.0)
         self.assertEqual(set(row["pids"]), {1, 2})
+
+        # Multi-instance app: sub_instances breaks down by PID so the UI can
+        # show which sandbox is burning the CPU.
+        subs = row["sub_instances"]
+        self.assertEqual(len(subs), 2)
+        self.assertEqual([s["pid"] for s in subs], [1, 2])
+        by_pid = {s["pid"]: s for s in subs}
+        self.assertAlmostEqual(by_pid[1]["cpu_percent"], 5.0)
+        self.assertEqual(by_pid[1]["memory_bytes"], 10 * 1024 * 1024)
+        self.assertEqual(by_pid[1]["instance"], "i1")
+        self.assertEqual(by_pid[1]["branch"], "stable")
+        self.assertAlmostEqual(by_pid[2]["cpu_percent"], 7.0)
+        self.assertEqual(by_pid[2]["memory_bytes"], 20 * 1024 * 1024)
+
+    def test_sub_instances_sorted_by_pid(self):
+        # Lister returns instances out of pid order; sub_instances should be
+        # sorted so the UI doesn't reshuffle the per-instance rows each tick.
+        procs = {
+            3: _FakeProcess(3, cpu_seq=[1.0, 1.0]),
+            1: _FakeProcess(1, cpu_seq=[1.0, 1.0]),
+            2: _FakeProcess(2, cpu_seq=[1.0, 1.0]),
+        }
+        tracker = RunningTracker(
+            process_factory=self._factory_from(procs),
+            lister=self._make_lister(
+                {"instance": "i3", "pid": 3, "child_pid": 3,
+                 "id": "org.x", "branch": "stable"},
+                {"instance": "i1", "pid": 1, "child_pid": 1,
+                 "id": "org.x", "branch": "stable"},
+                {"instance": "i2", "pid": 2, "child_pid": 2,
+                 "id": "org.x", "branch": "stable"},
+            ),
+        )
+        tracker.sample()
+        subs = tracker.sample()[0]["sub_instances"]
+        self.assertEqual([s["pid"] for s in subs], [1, 2, 3])
 
     def test_stale_processes_pruned_from_cache(self):
         a = _FakeProcess(1, cpu_seq=[1.0, 2.0])
@@ -295,6 +374,179 @@ class TestFormatters(unittest.TestCase):
         self.assertEqual(format_cpu(None), "—")
         self.assertEqual(format_cpu(0.0), "0.0%")
         self.assertEqual(format_cpu(12.345), "12.3%")
+
+
+class TestFormatRelativeTime(unittest.TestCase):
+    def _now(self, t):
+        return lambda: t
+
+    def test_none_returns_empty(self):
+        self.assertEqual(format_relative_time(None), "")
+
+    def test_just_now_under_ten_seconds(self):
+        self.assertEqual(format_relative_time(995.0, self._now(1000.0)), "just now")
+
+    def test_seconds_granularity(self):
+        self.assertEqual(format_relative_time(970.0, self._now(1000.0)), "30s ago")
+
+    def test_minutes_granularity(self):
+        self.assertEqual(
+            format_relative_time(1000.0 - 180.0, self._now(1000.0)),
+            "3m ago",
+        )
+
+    def test_hours_granularity(self):
+        epoch = 1000.0 - 2 * 3600 - 30 * 60
+        self.assertEqual(format_relative_time(epoch, self._now(1000.0)), "2h ago")
+
+    def test_days_granularity(self):
+        epoch = 1000.0 - 3 * 86400
+        self.assertEqual(format_relative_time(epoch, self._now(1000.0)), "3d ago")
+
+    def test_future_epoch_returns_empty(self):
+        # Clock skew: refuse to show a negative time rather than render '-5s ago'.
+        self.assertEqual(format_relative_time(2000.0, self._now(1000.0)), "")
+
+
+class TestOrderWithFreeze(unittest.TestCase):
+    """Pure helper that powers the Running tab's "Freeze position" toggle."""
+
+    @staticmethod
+    def _natural(rows):
+        # Tests use a deterministic sort by id so the result is predictable.
+        return sorted(rows, key=lambda r: r["id"])
+
+    def _row(self, app_id):
+        return {"id": app_id}
+
+    def test_preserves_existing_order_for_present_apps(self):
+        rows = [self._row("c"), self._row("a"), self._row("b")]
+        # Frozen order: a, b, c (entirely different from the input list order).
+        out = order_with_freeze(
+            rows, ["a", "b", "c"], natural_sort=self._natural,
+        )
+        self.assertEqual([r["id"] for r in out], ["a", "b", "c"])
+
+    def test_drops_apps_that_disappeared(self):
+        rows = [self._row("a"), self._row("c")]
+        out = order_with_freeze(
+            rows, ["a", "b", "c"], natural_sort=self._natural,
+        )
+        # 'b' vanished — gone. The rest stays in frozen order.
+        self.assertEqual([r["id"] for r in out], ["a", "c"])
+
+    def test_appends_new_arrivals_in_natural_sort_order(self):
+        # 'a' is frozen; 'c' and 'b' are new — they should come out in
+        # natural_sort order (alphabetical here), tagged onto the end.
+        rows = [self._row("a"), self._row("c"), self._row("b")]
+        out = order_with_freeze(
+            rows, ["a"], natural_sort=self._natural,
+        )
+        self.assertEqual([r["id"] for r in out], ["a", "b", "c"])
+
+    def test_empty_frozen_order_just_sorts_naturally(self):
+        rows = [self._row("c"), self._row("a"), self._row("b")]
+        out = order_with_freeze(rows, [], natural_sort=self._natural)
+        self.assertEqual([r["id"] for r in out], ["a", "b", "c"])
+
+    def test_empty_rows_returns_empty(self):
+        self.assertEqual(
+            order_with_freeze([], ["a", "b"], natural_sort=self._natural),
+            [],
+        )
+
+
+class TestSampleEnrichesSubInstances(unittest.TestCase):
+    """End-to-end: sample() populates cmdline/comm/started_at on each sub."""
+
+    def test_sub_instances_carry_process_meta(self):
+        proc = _FakeProcess(
+            100, cpu_seq=[2.0, 8.0], rss=50 * 1024 * 1024,
+            cmdline_seq=["/app/bin/keepassxc", "--lock"],
+            comm="keepassxc",
+            create_time=1000.0,
+        )
+
+        def factory(pid):
+            if pid == 100:
+                return proc
+            raise KeyError(pid)
+
+        tracker = RunningTracker(
+            process_factory=factory,
+            lister=lambda: [{
+                "instance": "abc", "pid": 100, "child_pid": 100,
+                "id": "org.keepassxc.KeePassXC", "branch": "stable",
+            }],
+        )
+        tracker.sample()  # prime
+        row = tracker.sample()[0]
+        sub = row["sub_instances"][0]
+        self.assertEqual(sub["cmdline"], ["/app/bin/keepassxc", "--lock"])
+        self.assertEqual(sub["comm"], "keepassxc")
+        self.assertEqual(sub["started_at"], 1000.0)
+
+    def test_missing_meta_falls_back_to_defaults(self):
+        # FakeProcess without cmdline/comm/create_time set raises AttributeError;
+        # _process_meta swallows it so the sub row still carries the basics.
+        proc = _FakeProcess(100)
+        tracker = RunningTracker(
+            process_factory=lambda pid: proc,
+            lister=lambda: [{
+                "instance": "i", "pid": 100, "child_pid": 100,
+                "id": "org.example", "branch": "stable",
+            }],
+        )
+        sub = tracker.sample()[0]["sub_instances"][0]
+        self.assertEqual(sub["cmdline"], [])
+        self.assertEqual(sub["comm"], "")
+        self.assertIsNone(sub["started_at"])
+
+    def test_sub_instances_sorted_by_started_at_ascending(self):
+        # Three instances, distinct create_times in non-monotonic order.
+        procs = {
+            1: _FakeProcess(1, cpu_seq=[1.0, 1.0], create_time=2000.0),
+            2: _FakeProcess(2, cpu_seq=[1.0, 1.0], create_time=1500.0),
+            3: _FakeProcess(3, cpu_seq=[1.0, 1.0], create_time=1800.0),
+        }
+        tracker = RunningTracker(
+            process_factory=lambda pid: procs[pid],
+            lister=lambda: [
+                {"instance": "i1", "pid": 1, "child_pid": 1,
+                 "id": "org.x", "branch": "stable"},
+                {"instance": "i2", "pid": 2, "child_pid": 2,
+                 "id": "org.x", "branch": "stable"},
+                {"instance": "i3", "pid": 3, "child_pid": 3,
+                 "id": "org.x", "branch": "stable"},
+            ],
+        )
+        tracker.sample()  # prime
+        subs = tracker.sample()[0]["sub_instances"]
+        # Oldest first: pid=2 (1500), pid=3 (1800), pid=1 (2000).
+        self.assertEqual([s["pid"] for s in subs], [2, 3, 1])
+
+    def test_missing_started_at_sorts_last_with_pid_tiebreak(self):
+        # When timestamps are missing, fall back to ascending pid.
+        procs = {
+            5: _FakeProcess(5, cpu_seq=[1.0, 1.0]),
+            2: _FakeProcess(2, cpu_seq=[1.0, 1.0]),
+            8: _FakeProcess(8, cpu_seq=[1.0, 1.0], create_time=500.0),
+        }
+        tracker = RunningTracker(
+            process_factory=lambda pid: procs[pid],
+            lister=lambda: [
+                {"instance": "i1", "pid": 5, "child_pid": 5,
+                 "id": "org.x", "branch": "stable"},
+                {"instance": "i2", "pid": 2, "child_pid": 2,
+                 "id": "org.x", "branch": "stable"},
+                {"instance": "i3", "pid": 8, "child_pid": 8,
+                 "id": "org.x", "branch": "stable"},
+            ],
+        )
+        tracker.sample()
+        subs = tracker.sample()[0]["sub_instances"]
+        # pid=8 has a timestamp (500) — comes first. The other two sort by pid.
+        self.assertEqual([s["pid"] for s in subs], [8, 2, 5])
 
 
 if __name__ == "__main__":

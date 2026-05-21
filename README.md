@@ -23,7 +23,7 @@ Three tabs, one window, lots of helpful context.
 ### Running
 
 A live look at every Flatpak sandbox currently running on your system, with
-**CPU and RSS memory** refreshed every two seconds. Multiple instances of
+**CPU and memory** refreshed every two seconds. Multiple instances of
 the same app aggregate into a single row so the list stays tidy. Sort by
 CPU (default — heaviest hitters on top), memory, or name.
 
@@ -136,7 +136,7 @@ Ubuntu 24.04, Fedora 40+):
 
 - `python3-gi`, `gir1.2-gtk-4.0`, `gir1.2-adw-1` (libadwaita ≥ 1.4 — tested
   against 1.5)
-- `python3-psutil` (Running tab CPU/RSS sampling)
+- `python3-psutil` (Running tab CPU/memory sampling)
 - `flatpak` (obviously)
 - `gnome-software` (only used for the "Open in Software" hand-off)
 
@@ -182,7 +182,7 @@ from any Python environment.
 | Field                      | Source                                                                              |
 | -------------------------- | ----------------------------------------------------------------------------------- |
 | Running apps               | `flatpak ps --columns=instance,pid,child-pid,application,branch` — one row per      |
-|                            | sandbox. CPU and RSS read via `psutil.Process(pid)` walked recursively over each    |
+|                            | sandbox. CPU and memory read via `psutil.Process(pid)` walked recursively over each |
 |                            | instance's process tree. CPU % is delta-based (first sample = baseline = 0 %).      |
 | App list, version, size    | `flatpak list --app --columns=…`                                                    |
 | Install date               | First `deploy install` entry in `flatpak history` (with `LC_ALL=C` for month names) |

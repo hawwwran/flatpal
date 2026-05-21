@@ -207,6 +207,62 @@ class TestDescriptionMarkup(unittest.TestCase):
         self.assertIn("• first item that spans two source lines", md)
         self.assertIn("• second item", md)
 
+    def test_interleaved_li_translations_inside_single_ul(self):
+        # The Resources (net.nokyan.Resources) authoring style: ONE <ul>
+        # containing <li> + <li xml:lang="…"> interleaved for each item.
+        # We must filter li-by-li, not render every translation as a bullet.
+        desc = ET.fromstring(
+            '<description><ul>'
+            '<li>CPU</li>'
+            '<li xml:lang="cs">Procesor</li>'
+            '<li xml:lang="de">Prozessor</li>'
+            '<li>Memory</li>'
+            '<li xml:lang="cs">Paměť</li>'
+            '<li xml:lang="de">Speicher</li>'
+            '</ul></description>'
+        )
+        md_cs = _description_markup(desc, "cs")
+        self.assertIn("• Procesor", md_cs)
+        self.assertIn("• Paměť", md_cs)
+        self.assertNotIn("Prozessor", md_cs)
+        self.assertNotIn("Speicher", md_cs)
+        # Untagged English shouldn't leak through alongside the cs picks.
+        self.assertNotIn("• CPU", md_cs)
+        self.assertNotIn("• Memory", md_cs)
+
+    def test_bullets_inside_a_list_use_tight_single_newline(self):
+        # Each <li> as its own \n\n-separated block makes a 6-item feature
+        # list (Resources, GIMP) consume far more vertical space than the
+        # paragraph above it. Items inside one list should be tight.
+        desc = ET.fromstring(
+            "<description>"
+            "<p>Intro paragraph</p>"
+            "<ul><li>One</li><li>Two</li><li>Three</li></ul>"
+            "<p>After list</p>"
+            "</description>"
+        )
+        md = _description_markup(desc, None)
+        self.assertEqual(
+            md,
+            "Intro paragraph\n\n• One\n• Two\n• Three\n\nAfter list",
+        )
+
+    def test_interleaved_li_falls_back_to_untagged_when_lang_missing(self):
+        # Czech user, but the second item has no cs variant — should fall
+        # back to the untagged baseline for that single item, keeping the
+        # cs pick for the items that do have one.
+        desc = ET.fromstring(
+            '<description><ul>'
+            '<li>CPU</li>'
+            '<li xml:lang="cs">Procesor</li>'
+            '<li>GPU</li>'  # no cs variant for this one
+            '</ul></description>'
+        )
+        md = _description_markup(desc, "cs")
+        self.assertIn("• Procesor", md)
+        self.assertIn("• GPU", md)
+        self.assertNotIn("• CPU", md)
+
 
 class TestParseMetainfoGIMPDescription(unittest.TestCase):
     """End-to-end check on the GIMP fixture — the description used to leak

@@ -14,6 +14,10 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from .core import fetch_apps, format_date, sort_apps
 from .metainfo import load_metainfo
 from .search import filter_installed
+from .widgets import make_sort_pill
+
+
+_SORT_LABELS = {"name": "name", "date": "install date", "size": "size"}
 
 
 # The listboxes below are wrapped in Adw.Clamp(900) for a tidy max-width
@@ -25,10 +29,19 @@ LIST_MAX_WIDTH = 900
 
 def _clamp_child(widget: Gtk.Widget) -> Adw.Clamp:
     """Wrap `widget` in an Adw.Clamp(max=LIST_MAX_WIDTH) so it lines up with
-    the boxed-list rows below it."""
+    the boxed-list rows below it.
+
+    hexpand=True propagates up to ensure the clamp receives the full window
+    width as its allocation. tightening_threshold=max disables AdwClamp's
+    cubic-ease window — without it the child width slides on the easing
+    curve and content jitter in the for_size value moves the search bar
+    visibly by a few pixels.
+    """
     clamp = Adw.Clamp()
     clamp.set_maximum_size(LIST_MAX_WIDTH)
+    clamp.set_tightening_threshold(LIST_MAX_WIDTH)
     clamp.set_child(widget)
+    clamp.set_hexpand(True)
     return clamp
 
 
@@ -67,6 +80,8 @@ class AppRow(Adw.ActionRow):
         if app["branch"] and app["branch"] != "stable":
             subtitle_bits.append(app["branch"])
         self.set_subtitle(GLib.markup_escape_text(" • ".join(subtitle_bits)))
+        self.set_title_lines(1)
+        self.set_subtitle_lines(1)
         self.set_activatable(True)
 
         icon = Gtk.Image.new_from_icon_name(app["id"])
@@ -122,13 +137,22 @@ class InstalledPage(Gtk.Box):
         self.status_label.add_css_class("dim-label")
         self.status_label.add_css_class("caption")
         self.status_label.set_halign(Gtk.Align.START)
-        self.status_label.set_margin_top(4)
-        self.status_label.set_margin_bottom(4)
+        self.status_label.set_xalign(0.0)
+
+        # Brand-purple sort pill shared with the other tabs.
+        self.sort_pill = make_sort_pill()
+        self.sort_pill.set_visible(False)  # off until the first _render run
+
+        status_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        status_box.set_margin_top(4)
+        status_box.set_margin_bottom(4)
         # Same horizontal inset as the listbox below so the status text lines
         # up with the row cards instead of floating 6px to their right.
-        self.status_label.set_margin_start(12)
-        self.status_label.set_margin_end(12)
-        self.append(_clamp_child(self.status_label))
+        status_box.set_margin_start(12)
+        status_box.set_margin_end(12)
+        status_box.append(self.status_label)
+        status_box.append(self.sort_pill)
+        self.append(_clamp_child(status_box))
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
@@ -149,7 +173,9 @@ class InstalledPage(Gtk.Box):
 
         clamp = Adw.Clamp()
         clamp.set_maximum_size(LIST_MAX_WIDTH)
+        clamp.set_tightening_threshold(LIST_MAX_WIDTH)
         clamp.set_child(self.listbox)
+        clamp.set_hexpand(True)
         scrolled.set_child(clamp)
         self.append(scrolled)
 
@@ -198,16 +224,16 @@ class InstalledPage(Gtk.Box):
 
         total = len(self.apps)
         visible = len(ordered)
-        sort_label = {"name": "name", "date": "install date", "size": "size"}[self.sort_key]
         arrow = "↓" if self.reverse else "↑"
+        sort_label = _SORT_LABELS.get(self.sort_key, self.sort_key)
         if self.query.strip():
-            self.status_label.set_label(
-                f"{visible} of {total} apps · sorted by {sort_label} {arrow}"
-            )
+            self.status_label.set_label(f"{visible} of {total} apps")
         else:
             self.status_label.set_label(
-                f"{total} app{'s' if total != 1 else ''} · sorted by {sort_label} {arrow}"
+                f"{total} app{'s' if total != 1 else ''}"
             )
+        self.sort_pill.set_label(f"sorted by {sort_label} {arrow}")
+        self.sort_pill.set_visible(total > 0)
 
         if self._on_render:
             self._on_render()

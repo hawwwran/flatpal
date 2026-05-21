@@ -17,6 +17,7 @@ from .catalog import load_catalog
 from .constants import INITIAL_LIMIT, LOAD_MORE_INCREMENT, MAX_LIMIT
 from .popularity import format_install_count, load_popular, popularity_index
 from .search import popular_shelf, search_catalog
+from .widgets import make_sort_pill
 
 
 # Lock search bar, status row and listboxes to the same width so the input
@@ -38,6 +39,12 @@ class ExploreRow(Adw.ActionRow):
         if entry.get("developer_name"):
             bits.append(entry["developer_name"])
         self.set_subtitle(GLib.markup_escape_text(" • ".join(bits)))
+        # Single-line + end-ellipsis: a freak-long app name / id / developer
+        # would otherwise make the row taller and inflate the listbox's
+        # natural width, which the outer clamp now no longer leaks to layout
+        # but the row would still wrap visually.
+        self.set_title_lines(1)
+        self.set_subtitle_lines(1)
         self.set_activatable(True)
 
         icon = self._build_icon(entry)
@@ -138,7 +145,15 @@ class ExplorePage(Gtk.Box):
         self.status_label.add_css_class("caption")
         self.status_label.set_halign(Gtk.Align.START)
         self.status_label.set_xalign(0.0)
-        status_row.set_start_widget(self.status_label)
+
+        # Brand-purple sort pill shared with Running/Installed tabs.
+        self.sort_pill = make_sort_pill()
+        self.sort_pill.set_visible(False)  # shown once a result list is populated
+
+        status_start = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        status_start.append(self.status_label)
+        status_start.append(self.sort_pill)
+        status_row.set_start_widget(status_start)
 
         show_popular_caption = Gtk.Label(label="Show popular")
         show_popular_caption.add_css_class("dim-label")
@@ -210,14 +225,26 @@ class ExplorePage(Gtk.Box):
         # Single outer Adw.Clamp wrapping search_bar + status_row + stack so
         # they all share the exact same 900px width allocation and the row
         # cards line up pixel-perfect with the search bar and status text.
+        #
+        # Two settings keep the width purely a function of *window* size,
+        # never of inner content:
+        #   • hexpand=True propagates up so the ViewStack → ToolbarView →
+        #     window chain allocates the clamp the full window width.
+        #   • tightening_threshold == maximum_size flattens AdwClamp's default
+        #     cubic-ease window (400..~1150 px) into a hard `min(for_size,
+        #     max)`. Without this, content-driven jitter in the clamp's
+        #     allocation rides the easing curve and the search bar visibly
+        #     shifts a few pixels when the stack or status text changes.
         outer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer_box.append(self.search_bar)
         outer_box.append(status_row)
         outer_box.append(self.stack)
         outer_clamp = Adw.Clamp()
         outer_clamp.set_maximum_size(LIST_MAX_WIDTH)
+        outer_clamp.set_tightening_threshold(LIST_MAX_WIDTH)
         outer_clamp.set_child(outer_box)
         outer_clamp.set_vexpand(True)
+        outer_clamp.set_hexpand(True)
         self.append(outer_clamp)
 
     def _on_stack_changed(self, *_):
@@ -427,6 +454,7 @@ class ExplorePage(Gtk.Box):
         if not self._catalog_loaded:
             self.stack.set_visible_child_name("loading")
             self.status_label.set_label("")
+            self.sort_pill.set_visible(False)
             if self._on_render:
                 self._on_render()
             return
@@ -466,8 +494,10 @@ class ExplorePage(Gtk.Box):
                     f"{'es' if len(all_results) != 1 else ''}"
                 )
             self.status_label.set_label(
-                f"{base} from {len(self._catalog)} Flathub apps · {sort_label}"
+                f"{base} from {len(self._catalog)} Flathub apps"
             )
+            self.sort_pill.set_label(f"sorted by {sort_label}")
+            self.sort_pill.set_visible(True)
             self._update_more_button(
                 self.search_more_btn, len(visible), len(all_results)
             )
@@ -476,6 +506,7 @@ class ExplorePage(Gtk.Box):
             self.status_label.set_label(
                 f"No matches in {len(self._catalog)} Flathub apps"
             )
+            self.sort_pill.set_visible(False)
             self.search_more_btn.set_visible(False)
 
         if self._on_render:
@@ -487,6 +518,7 @@ class ExplorePage(Gtk.Box):
         if not self._show_popular:
             self.stack.set_visible_child_name("placeholder")
             self.status_label.set_label("")
+            self.sort_pill.set_visible(False)
             self.search_more_btn.set_visible(False)
             self.popular_more_btn.set_visible(False)
             return
@@ -519,6 +551,8 @@ class ExplorePage(Gtk.Box):
             if 0 < done < total:
                 base += f" · loaded {done} of {total} pages"
             self.status_label.set_label(base)
+            self.sort_pill.set_label("sorted by popularity")
+            self.sort_pill.set_visible(True)
             self._update_more_button(
                 self.popular_more_btn, len(visible), len(all_rows)
             )
@@ -528,11 +562,13 @@ class ExplorePage(Gtk.Box):
         if not self._catalog_loaded and self._catalog_loading:
             self.stack.set_visible_child_name("loading")
             self.status_label.set_label("")
+            self.sort_pill.set_visible(False)
             return
 
         # Loaded but no popularity (network failure / not loaded yet) → placeholder.
         self.stack.set_visible_child_name("placeholder")
         self.status_label.set_label("")
+        self.sort_pill.set_visible(False)
         self.search_more_btn.set_visible(False)
         self.popular_more_btn.set_visible(False)
 

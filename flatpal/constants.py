@@ -24,7 +24,7 @@ MAX_LIMIT = 1000
 
 # ----- Running tab -----------------------------------------------------------
 
-# How often the running-apps tab re-samples CPU/RSS while it's visible.
+# How often the running-apps tab re-samples CPU/memory while it's visible.
 REFRESH_MS = 2000
 
 # ----- Screenshot cache -------------------------------------------------------

@@ -1,15 +1,18 @@
-"""Running-flatpaks enumeration + per-app CPU and RSS sampling.
+"""Running-flatpaks enumeration + per-app CPU and memory sampling.
 
 Pure logic, no GTK. The UI calls `RunningTracker.sample()` on a timer and
 renders the returned list. The tracker caches `psutil.Process` objects across
 samples so `cpu_percent()` computes a delta — the first sample for a new
-process returns 0 % and subsequent samples reflect real activity.
+process returns 0 % and subsequent samples reflect real activity. Memory is
+read from psutil's RSS (resident set size) — the physical RAM the process
+currently holds.
 """
 
 from __future__ import annotations
 
 import subprocess
-from typing import Iterable, List, Optional
+import time
+from typing import Callable, Iterable, List, Optional
 
 try:
     import psutil
@@ -20,10 +23,44 @@ except ImportError:  # pragma: no cover — psutil is in the deps
 # psutil raises these for: process gone, denied, zombie, race-conditions during
 # /proc reads. We catch them at every psutil boundary so the UI degrades to
 # zero-values rather than crashing.
-_PROC_ERRORS = (
+_PROC_ERRORS: tuple = (
     (psutil.Error if psutil else Exception),
     OSError,
 )
+
+# Same as _PROC_ERRORS plus AttributeError/TypeError — the latter two cover
+# stub Process objects in tests (which don't implement cmdline/name/create_time)
+# and lets `_process_meta` fall through to its defaults instead of crashing.
+_META_ERRORS: tuple = _PROC_ERRORS + (AttributeError, TypeError)
+
+
+def _process_meta(proc) -> dict:
+    """Best-effort extraction of cmdline / comm / create_time off a psutil.Process.
+
+    Each field returns its empty/None default on any psutil or attribute error,
+    so the UI degrades gracefully when /proc reads race or a test fixture
+    skips one of the methods.
+    """
+    meta: dict = {"cmdline": [], "comm": "", "started_at": None}
+    if proc is None:
+        return meta
+    try:
+        c = proc.cmdline()
+        if isinstance(c, list):
+            meta["cmdline"] = [str(x) for x in c]
+    except _META_ERRORS:
+        pass
+    try:
+        n = proc.name()
+        if n:
+            meta["comm"] = str(n)
+    except _META_ERRORS:
+        pass
+    try:
+        meta["started_at"] = float(proc.create_time())
+    except _META_ERRORS:
+        pass
+    return meta
 
 
 def list_running_instances(runner=None) -> List[dict]:
@@ -82,7 +119,7 @@ def aggregate_by_app(instances: Iterable[dict]) -> dict:
 
 
 class RunningTracker:
-    """Wraps `psutil.Process` cache + CPU/RSS sampling per running flatpak app.
+    """Wraps `psutil.Process` cache + CPU/memory sampling per running flatpak app.
 
     Usage:
         tracker = RunningTracker()
@@ -106,7 +143,11 @@ class RunningTracker:
         """Return one row per running app with current cpu/memory.
 
         Row keys: `id`, `instances` (count), `pids` (list of ints),
-        `cpu_percent`, `memory_bytes`, `branch`.
+        `cpu_percent`, `memory_bytes`, `branch`, `sub_instances`. The
+        `sub_instances` list holds one dict per running sandbox of the app
+        with its own `instance`, `pid`, `branch`, `cpu_percent`,
+        `memory_bytes` — sorted by pid so the UI ordering doesn't flicker
+        between samples.
         """
         instances = self._lister()
         by_app = aggregate_by_app(instances)
@@ -119,17 +160,49 @@ class RunningTracker:
             mem_sum = 0
             pids: List[int] = []
             branch = ""
+            sub_instances: List[dict] = []
 
             for inst in insts:
                 root_pid = inst.get("child_pid") or inst["pid"]
                 branch = branch or inst.get("branch", "")
                 pids.append(root_pid)
 
+                inst_cpu = 0.0
+                inst_mem = 0
                 for pid in self._tree_pids(root_pid):
                     seen_pids.add(pid)
                     cpu, mem = self._sample_pid(pid)
-                    cpu_sum += cpu
-                    mem_sum += mem
+                    inst_cpu += cpu
+                    inst_mem += mem
+
+                # Read cmdline / comm / create_time off the ROOT pid only —
+                # children inherit and would just duplicate noise. Best-effort:
+                # /proc reads race, so any field may end up empty/None.
+                root_proc = self._get_process(root_pid)
+                meta = _process_meta(root_proc)
+
+                cpu_sum += inst_cpu
+                mem_sum += inst_mem
+                sub_instances.append({
+                    "instance": inst.get("instance", ""),
+                    "pid": root_pid,
+                    "branch": inst.get("branch", ""),
+                    "cpu_percent": inst_cpu,
+                    "memory_bytes": inst_mem,
+                    "cmdline": meta["cmdline"],
+                    "comm": meta["comm"],
+                    "started_at": meta["started_at"],
+                })
+
+            # Oldest sandbox first — usually the "main" interactive instance.
+            # PID tiebreaks when create_time is missing or equal (it can match
+            # to the second for processes started back-to-back).
+            sub_instances.sort(
+                key=lambda s: (
+                    s.get("started_at") if s.get("started_at") is not None else float("inf"),
+                    s.get("pid", 0),
+                )
+            )
 
             rows.append({
                 "id": app_id,
@@ -138,6 +211,7 @@ class RunningTracker:
                 "branch": branch,
                 "cpu_percent": cpu_sum,
                 "memory_bytes": mem_sum,
+                "sub_instances": sub_instances,
             })
 
         self._prune_cache(seen_pids)
@@ -197,6 +271,35 @@ class RunningTracker:
 SORT_KEYS = ("cpu", "memory", "name")
 
 
+def order_with_freeze(
+    rows: List[dict],
+    frozen_order: List[str],
+    natural_sort: Callable[[List[dict]], List[dict]],
+) -> List[dict]:
+    """Apply a "freeze the row order" filter to a fresh sample.
+
+    Rules:
+      * Apps that were in `frozen_order` AND are still present in `rows`
+        keep their relative position from `frozen_order`.
+      * Newly-arrived apps (in `rows` but not in `frozen_order`) get
+        appended at the end, in the order `natural_sort` produces — so
+        their relative ordering is still sensible even when frozen.
+      * Apps that vanished from the bus drop out.
+
+    Pure helper: the UI page passes its own `natural_sort` closure so the
+    freeze logic doesn't need to know about sort keys.
+    """
+    by_id = {r["id"]: r for r in rows}
+    ordered: List[dict] = []
+    for app_id in frozen_order:
+        r = by_id.pop(app_id, None)
+        if r is not None:
+            ordered.append(r)
+    if by_id:
+        ordered.extend(natural_sort(list(by_id.values())))
+    return ordered
+
+
 def sort_running(rows, key: str) -> list:
     """Sort running-app rows by one of SORT_KEYS.
 
@@ -232,3 +335,29 @@ def format_cpu(percent: Optional[float]) -> str:
     if percent is None:
         return "—"
     return f"{percent:.1f}%"
+
+
+def format_relative_time(
+    epoch: Optional[float],
+    now_fn: Optional[Callable[[], float]] = None,
+) -> str:
+    """Render a unix epoch as 'just now' / '5s ago' / '2m ago' / '3h ago' / '4d ago'.
+
+    Returns the empty string when `epoch` is None or in the future. `now_fn`
+    is injectable so unit tests don't depend on wall-clock time.
+    """
+    if epoch is None:
+        return ""
+    now = (now_fn or time.time)()
+    delta = now - float(epoch)
+    if delta < 0:
+        return ""
+    if delta < 10:
+        return "just now"
+    if delta < 60:
+        return f"{int(delta)}s ago"
+    if delta < 3600:
+        return f"{int(delta / 60)}m ago"
+    if delta < 86400:
+        return f"{int(delta / 3600)}h ago"
+    return f"{int(delta / 86400)}d ago"
