@@ -17,7 +17,7 @@ from .catalog import load_catalog
 from .constants import INITIAL_LIMIT, LOAD_MORE_INCREMENT, MAX_LIMIT
 from .popularity import format_install_count, load_popular, popularity_index
 from .search import popular_shelf, search_catalog
-from .widgets import make_sort_pill
+from .widgets import make_installed_pill, make_sort_pill
 
 
 # Lock search bar, status row and listboxes to the same width so the input
@@ -62,12 +62,7 @@ class ExploreRow(Adw.ActionRow):
             self.add_suffix(label)
 
         if entry.get("installed"):
-            tag = Gtk.Label(label="Installed")
-            tag.add_css_class("caption")
-            tag.add_css_class("success")
-            tag.add_css_class("dim-label")
-            tag.set_valign(Gtk.Align.CENTER)
-            self.add_suffix(tag)
+            self.add_suffix(make_installed_pill())
 
     def _build_icon(self, entry: dict) -> Gtk.Image:
         cached: Optional[Path] = entry.get("cached_icon")

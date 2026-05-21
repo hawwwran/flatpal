@@ -1,6 +1,6 @@
 """Shared UI primitives — pills used across the three tabs.
 
-Two pill variants today:
+Three pill variants today:
 
 * ``make_sort_pill`` — purple Flatpal-brand pill (`#4B2E5F` on white text)
   used to surface the current sort key on the Running / Installed / Explore
@@ -10,6 +10,10 @@ Two pill variants today:
   when active, soft gray when not. Used on the Running tab to let the user
   pin the row order across CPU/memory refreshes; the consuming page reacts to
   the callback by either preserving its `_rendered_order` or re-sorting.
+
+* ``make_installed_pill`` — Mint Teal pill that flags a row in the Explore
+  tab as "Installed" — replaces an earlier dim text label so the marker
+  scans at a glance.
 
 The CSS provider is installed lazily once per display so importing this
 module from a non-GTK context (or a unit test) doesn't side-effect.
@@ -26,17 +30,29 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gtk  # noqa: E402
 
 
-# Flatpal brand colour. Matches the icon's primary purple. Pairs cleanly
-# with white text (contrast ratio ~9.7:1 against #4B2E5F — passes WCAG AAA).
-_BRAND_PURPLE = "#4B2E5F"
-# Hardcoded blue for the freeze ON state. Independent of the user's accent
-# colour so the "frozen" visual stays predictable across themes.
-_FREEZE_ON_BLUE = "#3584E4"
+# Brand palette. Primary purple matches the icon and pairs cleanly with
+# white text (contrast ratio ~9.7:1 against #4B2E5F — passes WCAG AAA).
+# The three later additions extend the palette for the secondary "Installed"
+# marker, future warning/attention surfaces, and the AdwViewSwitcher tab
+# text colour respectively.
+_BRAND_PURPLE = "#4B2E5F"        # primary — sort pill, future hero accents
+_FREEZE_ON_BLUE = "#3584E4"      # toggle "on" state for the freeze pill
+_MINT_TEAL = "#1F9D8A"           # secondary accent — Installed marker
+_WARM_TERRACOTTA = "#B85C3B"     # reserved — warning / attention surfaces
+_DEEP_PETROL_BLUE = "#063B4C"    # foreground — AdwViewSwitcher tab text
 
 _PILL_CSS = (
     """
     .flatpal-sort-pill {
         background-color: %(brand)s;
+        color: #FFFFFF;
+        padding: 1px 8px;
+        border-radius: 9999px;
+        font-weight: 500;
+    }
+
+    .flatpal-installed-pill {
+        background-color: %(mint)s;
         color: #FFFFFF;
         padding: 1px 8px;
         border-radius: 9999px;
@@ -69,7 +85,21 @@ _PILL_CSS = (
     .flatpal-freeze-pill.flatpal-freeze-pill-on:checked:hover {
         background-color: #5BA0EC;
     }
-    """ % {"brand": _BRAND_PURPLE, "freeze_on": _FREEZE_ON_BLUE}
+
+    /* AdwViewSwitcher tabs (Running / Installed / Explore). Set the base
+       colour to Deep Petrol Blue so inactive tab labels + icons read in
+       brand colour against the header. libadwaita keeps its own accent
+       background for the active tab; this only re-tones the unselected
+       state. */
+    .view-switcher button {
+        color: %(petrol)s;
+    }
+    """ % {
+        "brand": _BRAND_PURPLE,
+        "mint": _MINT_TEAL,
+        "freeze_on": _FREEZE_ON_BLUE,
+        "petrol": _DEEP_PETROL_BLUE,
+    }
 ).encode("utf-8")
 
 
@@ -102,6 +132,16 @@ def make_sort_pill(initial_label: str = "") -> Gtk.Label:
     pill = Gtk.Label(label=initial_label)
     pill.add_css_class("caption")
     pill.add_css_class("flatpal-sort-pill")
+    pill.set_valign(Gtk.Align.CENTER)
+    return pill
+
+
+def make_installed_pill(label: str = "Installed") -> Gtk.Label:
+    """Non-interactive Mint Teal pill marking an Explore row as already installed."""
+    install_pill_css()
+    pill = Gtk.Label(label=label)
+    pill.add_css_class("caption")
+    pill.add_css_class("flatpal-installed-pill")
     pill.set_valign(Gtk.Align.CENTER)
     return pill
 

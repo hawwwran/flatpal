@@ -152,7 +152,7 @@ def _run_flatpak(args, env_overrides=None, timeout: float = 10.0):
         env.update(env_overrides)
     try:
         return subprocess.run(
-            host_cmd(["flatpak", *args]),
+            host_cmd(["flatpak", *args], env=env_overrides),
             capture_output=True, text=True, env=env, check=False,
             timeout=timeout,
         )

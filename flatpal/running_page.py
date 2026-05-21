@@ -336,11 +336,13 @@ class RunningPage(Gtk.Box):
 
         # Freeze-position toggle: blue when on, gray when off. Pins the
         # current order so CPU/memory swings don't shuffle the list while the
-        # user is reading it.
+        # user is reading it. Hidden alongside the sort pill until the first
+        # sample arrives — a toggle with no rows behind it is meaningless.
         self.freeze_pill = make_freeze_pill(
             self._on_freeze_toggled,
             initial=self._freeze_position,
         )
+        self.freeze_pill.set_visible(False)
 
         # "Collapse all": visible only while at least one ExpanderRow is open.
         self.collapse_btn = Gtk.Button(label="Collapse all")
@@ -392,7 +394,7 @@ class RunningPage(Gtk.Box):
         loading_spinner = Gtk.Spinner()
         loading_spinner.set_size_request(36, 36)
         loading_spinner.start()
-        loading_label = Gtk.Label(label="Sampling running Flatpaks…")
+        loading_label = Gtk.Label(label="Looking for running Flatpaks…")
         loading_label.add_css_class("dim-label")
         loading_box.append(loading_spinner)
         loading_box.append(loading_label)
@@ -632,10 +634,12 @@ class RunningPage(Gtk.Box):
                 f"{format_memory(total_mem)} memory"
             )
             self.sort_pill.set_visible(True)
+            self.freeze_pill.set_visible(True)
         else:
             self.stack.set_visible_child_name("empty")
             self.status_label.set_label("")
             self.sort_pill.set_visible(False)
+            self.freeze_pill.set_visible(False)
 
         self.sort_pill.set_label(
             f"sorted by {_SORT_LABELS.get(self._sort_by, 'CPU')}"
