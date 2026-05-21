@@ -127,7 +127,13 @@ def install_pill_css() -> None:
 
 
 def make_sort_pill(initial_label: str = "") -> Gtk.Label:
-    """Non-interactive brand-purple pill for the current sort key."""
+    """Non-interactive brand-purple pill for the current sort key.
+
+    The pill itself is a plain Gtk.Label so it stays visually quiet;
+    `app.py` attaches a `Gtk.GestureClick` to it post-construction that
+    pops the existing top-left sort button — clicking the pill teaches
+    the user where the sort menu lives without duplicating UI affordances.
+    """
     install_pill_css()
     pill = Gtk.Label(label=initial_label)
     pill.add_css_class("caption")

@@ -195,6 +195,17 @@ class FlatpalWindow(Adw.ApplicationWindow):
             ),
         )
 
+        # Per-tab sort pills are static labels, but clicking one pops the
+        # header's sort button — the pill is the discoverability cue, the
+        # header button is the canonical control. Wiring is external so the
+        # pill widget itself stays a plain Label.
+        for pill in (
+            self.installed_page.sort_pill,
+            self.explore_page.sort_pill,
+            self.running_page.sort_pill,
+        ):
+            self._wire_sort_pill_to_button(pill)
+
         self.view_stack = Adw.ViewStack()
         self.view_stack.add_titled_with_icon(
             self.running_page, "running", "Running",
@@ -234,6 +245,15 @@ class FlatpalWindow(Adw.ApplicationWindow):
         return page
 
     # ----- behaviour -------------------------------------------------------
+
+    def _wire_sort_pill_to_button(self, pill: Gtk.Widget) -> None:
+        """Make a Gtk.Label-based sort pill pop the header sort button on click."""
+        gesture = Gtk.GestureClick.new()
+        gesture.set_button(1)  # primary mouse button
+        gesture.connect("released", lambda *_: self.sort_btn.popup())
+        pill.add_controller(gesture)
+        pill.set_cursor_from_name("pointer")
+        pill.set_tooltip_text("Open sort menu")
 
     def _refresh_active_tab(self):
         name = self.view_stack.get_visible_child_name()
