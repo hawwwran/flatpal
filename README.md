@@ -22,15 +22,29 @@ Three tabs, one window, lots of helpful context.
 
 ### Running
 
-A live look at every Flatpak sandbox currently running on your system, with
-**CPU and memory** refreshed every two seconds. Multiple instances of
-the same app aggregate into a single row so the list stays tidy. Sort by
-CPU (default — heaviest hitters on top), memory, or name.
+<p align="center">
+  <img src="data/screenshots/running-tab.png" alt="Running tab — four apps with Inkscape expanded to show three sandboxes" width="780">
+</p>
 
-Polling pauses the moment you switch away from the tab, so Flatpal won't
-nibble at your battery in the background.
+A live look at every Flatpak sandbox currently running on your system,
+with **CPU and memory** refreshed every two seconds (pick 1, 2, 5, 10
+or 30 s from the inline dropdown — the next sample only fires while the
+tab is visible). The status line on the left rolls up the total CPU and
+memory across all running apps.
+
+Apps with more than one sandbox expand into a per-instance breakdown:
+each sub-row shows its **PID, command line, time since start** and its
+own CPU / memory share — so you can tell which open Inkscape window is
+actually doing the work. Sort by CPU (default — heaviest hitters on top),
+memory, or name. Toggle **Freeze position** to pin the current order
+while sampling swings keep updating the numbers, and **Collapse all**
+appears whenever any expander is open.
 
 ### Installed
+
+<p align="center">
+  <img src="data/screenshots/installed-tab.png" alt="Installed tab — twelve apps sorted by install date" width="780">
+</p>
 
 Every app deployed on the machine, each with its icon, version, on-disk
 size and the date you first installed it. Start typing anywhere in the
@@ -39,6 +53,10 @@ is always focused, you never have to click into it. Sort by name, install
 date (newest first by default), or size.
 
 ### Explore
+
+<p align="center">
+  <img src="data/screenshots/explore-tab.png" alt="Explore tab — Popular on Flathub shelf with install counts" width="780">
+</p>
 
 Browse Flathub's catalogue without leaving the window. Search by name,
 ID, developer or summary across ~4 000 apps using your local AppStream
@@ -49,22 +67,32 @@ you already have wear a small "Installed" badge.
 
 Empty search shows a **"Popular on Flathub"** shelf — the top apps right
 now, ready to click. Lists start at 50 entries with a *Show more* button
-that extends 50 at a time, up to the full top-1000.
+that extends 50 at a time, up to the full top-1000. Don't want the
+network calls? Flip the **Show popular** switch off and Explore stays
+fully offline (local AppStream search still works).
 
 ## The detail page
+
+<p align="center">
+  <img src="data/screenshots/detail.png" alt="Detail page — installed app with About panel" width="420">
+  &nbsp;
+  <img src="data/screenshots/detail2.png" alt="Detail page — catalog-only app with screenshots and license" width="420">
+</p>
 
 Click any app — installed or not — to slide into a detail view with the
 summary, screenshots, full description, license, homepage, donate / help /
 issue-tracker links, and (for installed apps) a compact sandbox-permissions
-summary plus version, size and install date.
+summary plus version, size and install date. Catalog-only apps land on
+the same page minus the install-specific fields — same layout, less
+clutter.
 
-Click a screenshot to open it **borderless fullscreen** on the same monitor
-as the Flatpal window, with arrow-key navigation through the gallery and
-Escape / `q` to close.
+Click a screenshot to open it **borderless fullscreen** on the same
+monitor as the Flatpal window, with arrow-key navigation through the
+gallery and Escape / `q` to close.
 
 Two action buttons in the header:
 
-- **Open app** — runs the installed flatpak.
+- **Open app** — runs the installed flatpak (shown only when it's installed).
 - **Open in Software** — hands off to GNOME Software when you want to
   install, uninstall or update.
 
@@ -111,24 +139,6 @@ Flathub popularity cache at `~/.cache/flatpal/flathub-popular.json` are
 left alone (they're cheap to rebuild — delete them yourself if you'd like
 the disk space back).
 
-## Tests
-
-Pure-logic test suite — no display, no network, no GTK dependency on the
-test side. Mocks are stdlib `unittest.mock`.
-
-```sh
-./run-tests.sh
-# or:  python3 -m unittest discover -s tests -v
-```
-
-232 tests covering size/date/locale parsing, the AppStream metainfo and
-Flathub catalog parsers, screenshot cache logic, popularity fetch &
-content-type/size validation, sandbox-permission summarisation, the running
-tracker, image-gallery navigator, search filters and sort logic — plus
-regression tests for every bug we've found and fixed.
-
-Run them before every `./install.sh`.
-
 ## Requirements
 
 System packages already present on most modern GNOME desktops (Zorin OS 18,
@@ -152,7 +162,7 @@ No third-party Python packages. Everything is stdlib + GObject Introspection.
 flatpal/                Python package
   app.py                Main window, ViewSwitcher, tab routing
   installed_page.py     Installed tab
-  running_page.py       Running tab UI
+  running_page.py       Running tab UI (expander rows, freeze toggle, refresh dropdown)
   running.py            `flatpak ps` parser + psutil-based stats tracker (pure)
   explore_page.py       Explore tab — search, popular shelf, Show more
   detail.py             Per-app detail page (Adw.NavigationPage)
@@ -166,16 +176,16 @@ flatpal/                Python package
   search.py             Search/filter helpers (pure)
   core.py               flatpak list / history parsing, sort (pure)
   settings.py           JSON-on-disk preferences (last tab, sort orders, …) (pure)
+  widgets.py            Shared small widgets (sort pill, freeze pill, …)
   constants.py          Tuning knobs in one place
-data/                   .desktop file, pre-sized PNG icons
-tests/                  unittest suite + AppStream fixtures
+data/                   .desktop file, pre-sized PNG icons, screenshots
 install.sh              User-local installer
 uninstall.sh            Removes everything
-run-tests.sh            Test runner shortcut
 ```
 
-The `(pure)`-tagged modules import zero GTK so they're trivially testable
-from any Python environment.
+The `(pure)`-tagged modules import zero GTK and have no side effects at
+import time — handy if you want to reuse a parser from another Python
+project.
 
 ### Where data comes from
 
@@ -184,6 +194,8 @@ from any Python environment.
 | Running apps               | `flatpak ps --columns=instance,pid,child-pid,application,branch` — one row per      |
 |                            | sandbox. CPU and memory read via `psutil.Process(pid)` walked recursively over each |
 |                            | instance's process tree. CPU % is delta-based (first sample = baseline = 0 %).      |
+| Per-sandbox cmdline / age  | `/proc/<pid>/cmdline` and `create_time` via `psutil`, queried on the root PID of    |
+|                            | each instance so children don't duplicate the line.                                 |
 | App list, version, size    | `flatpak list --app --columns=…`                                                    |
 | Install date               | First `deploy install` entry in `flatpak history` (with `LC_ALL=C` for month names) |
 | Icon                       | System icon theme (Flatpak exports its app icons into `hicolor/`)                   |
