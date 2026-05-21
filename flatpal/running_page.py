@@ -329,7 +329,10 @@ class RunningPage(Gtk.Box):
         self.status_label.set_xalign(0.0)
 
         # Brand-purple sort pill. Updated by _render_rows whenever sort changes.
+        # Hidden until the first sample arrives — an empty pill looks broken,
+        # and the actual sort label isn't known until _render_rows runs.
         self.sort_pill = make_sort_pill()
+        self.sort_pill.set_visible(False)
 
         # Freeze-position toggle: blue when on, gray when off. Pins the
         # current order so CPU/memory swings don't shuffle the list while the
@@ -378,6 +381,23 @@ class RunningPage(Gtk.Box):
         self.stack = Gtk.Stack()
         self.stack.set_vexpand(True)
 
+        # Loading state. Flatpal sees itself in `flatpak ps`, so the "empty"
+        # page below is effectively unreachable in practice — but on the
+        # first sample, before flatpak-spawn has rounded the trip, we have
+        # nothing to render. Show a spinner + status line until then.
+        loading_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        loading_box.set_valign(Gtk.Align.CENTER)
+        loading_box.set_halign(Gtk.Align.CENTER)
+        loading_box.set_vexpand(True)
+        loading_spinner = Gtk.Spinner()
+        loading_spinner.set_size_request(36, 36)
+        loading_spinner.start()
+        loading_label = Gtk.Label(label="Sampling running Flatpaks…")
+        loading_label.add_css_class("dim-label")
+        loading_box.append(loading_spinner)
+        loading_box.append(loading_label)
+        self.stack.add_named(loading_box, "loading")
+
         empty = Adw.StatusPage(
             icon_name="utilities-system-monitor-symbolic",
             title="Nothing running",
@@ -401,7 +421,8 @@ class RunningPage(Gtk.Box):
         self.listbox.connect("row-activated", self._on_listbox_row_activated)
         self._scrolled.set_child(self.listbox)
         self.stack.add_named(self._scrolled, "list")
-        self.stack.set_visible_child_name("empty")
+        # Default to loading; _render_rows flips to "list" once a sample lands.
+        self.stack.set_visible_child_name("loading")
 
         # Single outer Adw.Clamp wrapping status_row + stack so both share the
         # exact same 900px width allocation. Wrapping each child in its own

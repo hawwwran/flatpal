@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 import gi
@@ -27,6 +28,21 @@ class FlatpalWindow(Adw.ApplicationWindow):
         super().__init__(application=app)
         self.set_title("Flatpal")
         self.set_default_size(900, 720)
+
+        # GTK's default icon-theme search path inside the Flatpak sandbox
+        # is /app/share/icons + the runtime — it doesn't include the host's
+        # per-app exported icons (one of which is, e.g. Black Box's icon).
+        # Adding both system and user export trees so `IconTheme.has_icon()`
+        # / `set_from_icon_name()` resolves Discord / Black Box / etc. on
+        # the Running and Installed tabs. The Explore tab is unaffected —
+        # it downloads its own thumbnails from the Flathub CDN. Outside the
+        # sandbox the paths still exist on the host; add_search_path is a
+        # no-op for non-existent directories so this is also safe in dev mode.
+        icon_theme = Gtk.IconTheme.get_for_display(self.get_display())
+        icon_theme.add_search_path("/var/lib/flatpak/exports/share/icons")
+        icon_theme.add_search_path(
+            os.path.expanduser("~/.local/share/flatpak/exports/share/icons")
+        )
 
         # Load persisted prefs first — they seed every GIO action's initial
         # state, the visible tab, the sampling interval and the Flathub toggle.

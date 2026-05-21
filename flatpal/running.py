@@ -19,9 +19,10 @@ Two backends share the same shape:
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import time
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from .host import host_cmd, is_sandboxed
 
@@ -43,6 +44,109 @@ _META_ERRORS: tuple = _PROC_ERRORS + (AttributeError, TypeError)
 
 
 _CLOCK_TICKS = os.sysconf("SC_CLK_TCK")  # usually 100 on Linux
+
+# /proc/stat's btime line is constant for the life of the kernel — cache it
+# after the first read so HostProc.create_time() doesn't fire one shell-out
+# per process per sample. Module-level so every HostProc instance shares it.
+_BTIME: Optional[int] = None
+
+_BATCH_BOUNDARY = "==FLATPAL_BOUNDARY=="
+
+
+def _read_btime() -> Optional[int]:
+    """Read /proc/stat once and cache btime (boot time, seconds since epoch)."""
+    global _BTIME
+    if _BTIME is not None:
+        return _BTIME
+    try:
+        r = subprocess.run(
+            host_cmd(["cat", "/proc/stat"]),
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    for line in r.stdout.splitlines():
+        if line.startswith("btime "):
+            try:
+                _BTIME = int(line.split()[1])
+                return _BTIME
+            except (IndexError, ValueError):
+                return None
+    return None
+
+
+def _batch_read_files(paths: List[str], timeout: float = 10.0) -> List[Optional[str]]:
+    """Read many host files in ONE flatpak-spawn invocation.
+
+    Returns a list parallel to `paths`: per file, either its contents
+    or None on missing/permission-denied. The boundary is unlikely to
+    appear in /proc text files so naive split is safe in practice.
+    """
+    if not paths:
+        return []
+    quoted = " ".join(shlex.quote(p) for p in paths)
+    script = (
+        f'for f in {quoted}; do '
+        f'  cat "$f" 2>/dev/null; '
+        f'  printf "%s\\n" "{_BATCH_BOUNDARY}"; '
+        f'done'
+    )
+    try:
+        r = subprocess.run(
+            host_cmd(["sh", "-c", script]),
+            capture_output=True, text=True, timeout=timeout, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return [None] * len(paths)
+    if r.returncode != 0:
+        return [None] * len(paths)
+    chunks = r.stdout.split(_BATCH_BOUNDARY + "\n")
+    out: List[Optional[str]] = []
+    for i in range(len(paths)):
+        if i < len(chunks):
+            chunk = chunks[i]
+            out.append(chunk if chunk else None)
+        else:
+            out.append(None)
+    return out
+
+
+def _fetch_parents_map(timeout: float = 5.0) -> Dict[int, int]:
+    """One `ps -eo pid,ppid` via host_cmd. Empty dict on failure."""
+    try:
+        r = subprocess.run(
+            host_cmd(["ps", "-eo", "pid,ppid", "--no-headers"]),
+            capture_output=True, text=True, timeout=timeout, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+    if r.returncode != 0:
+        return {}
+    out: Dict[int, int] = {}
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            out[int(parts[0])] = int(parts[1])
+        except ValueError:
+            continue
+    return out
+
+
+def _walk_descendants(root_pid: int, parents: Dict[int, int]) -> List[int]:
+    """BFS through `parents` from root_pid; returns [root_pid, …descendants]."""
+    seen = {root_pid}
+    frontier = [root_pid]
+    while frontier:
+        cur = frontier.pop()
+        for pid, ppid in parents.items():
+            if ppid == cur and pid not in seen:
+                seen.add(pid)
+                frontier.append(pid)
+    return list(seen)
 
 
 class _MemInfo:
@@ -69,7 +173,8 @@ class HostProc:
     each call from /proc/PID/status's VmRSS line.
     """
 
-    __slots__ = ("pid", "_cmdline", "_name", "_create_time", "_last_cpu")
+    __slots__ = ("pid", "_cmdline", "_name", "_create_time", "_last_cpu",
+                 "_sample_stat", "_sample_status")
 
     def __init__(self, pid: int) -> None:
         self.pid = pid
@@ -77,6 +182,13 @@ class HostProc:
         self._name: Optional[str] = None
         self._create_time: Optional[float] = None
         self._last_cpu: Optional[tuple] = None  # (utime+stime ticks, monotonic seconds)
+        # Per-sample shared-fetch cache. Set by HostProc.batch_refresh at the
+        # start of each RunningTracker.sample(), cleared at the end. When set,
+        # cpu_percent/memory_info skip the one-shot `flatpak-spawn cat` and
+        # read from this buffer instead — that's what brings a 11-app sample
+        # from ~120 shell-outs down to 2.
+        self._sample_stat: Optional[str] = None
+        self._sample_status: Optional[str] = None
 
     def _read(self, path: str, timeout: float = 2.0) -> str:
         try:
@@ -90,13 +202,66 @@ class HostProc:
             raise OSError(f"cat {path} rc={r.returncode}")
         return r.stdout
 
+    @classmethod
+    def batch_refresh(cls, procs: Dict[int, "HostProc"]) -> None:
+        """Pre-fetch /proc/<pid>/{stat,status} for every proc in one shell-out.
+
+        Also opportunistically fetches /proc/<pid>/{cmdline,comm} for procs
+        that haven't cached those yet, so the first sample over a fresh set
+        of PIDs only fires one shell-out instead of (4 × N + 1).
+        """
+        if not procs:
+            return
+        pids = list(procs.keys())
+        needs_cmdline = [p for p in pids if procs[p]._cmdline is None]
+        needs_comm = [p for p in pids if procs[p]._name is None]
+
+        stat_paths = [f"/proc/{p}/stat" for p in pids]
+        status_paths = [f"/proc/{p}/status" for p in pids]
+        cmdline_paths = [f"/proc/{p}/cmdline" for p in needs_cmdline]
+        comm_paths = [f"/proc/{p}/comm" for p in needs_comm]
+
+        all_paths = stat_paths + status_paths + cmdline_paths + comm_paths
+        contents = _batch_read_files(all_paths)
+        n = len(pids)
+
+        for i, pid in enumerate(pids):
+            procs[pid]._sample_stat = contents[i] if i < len(contents) else None
+            procs[pid]._sample_status = (
+                contents[n + i] if n + i < len(contents) else None
+            )
+
+        offset = 2 * n
+        for i, pid in enumerate(needs_cmdline):
+            idx = offset + i
+            text = contents[idx] if idx < len(contents) else None
+            procs[pid]._cmdline = [a for a in (text or "").split("\0") if a]
+
+        offset = 2 * n + len(needs_cmdline)
+        for i, pid in enumerate(needs_comm):
+            idx = offset + i
+            text = contents[idx] if idx < len(contents) else None
+            procs[pid]._name = (text or "").strip()
+
+    @classmethod
+    def clear_sample_cache(cls, procs: Dict[int, "HostProc"]) -> None:
+        for p in procs.values():
+            p._sample_stat = None
+            p._sample_status = None
+
+    def _stat_text(self) -> str:
+        """Return /proc/PID/stat content from the per-sample cache or a fresh read."""
+        if self._sample_stat is not None:
+            return self._sample_stat
+        return self._read(f"/proc/{self.pid}/stat")
+
     def _stat_fields_after_comm(self) -> List[str]:
         """Return /proc/PID/stat fields starting at field 3 (state).
 
         comm (field 2) is in parentheses and may contain spaces, so we slice
         from the LAST ')' rather than naive split.
         """
-        text = self._read(f"/proc/{self.pid}/stat")
+        text = self._stat_text()
         rparen = text.rfind(")")
         if rparen == -1:
             raise OSError(f"malformed stat for pid {self.pid}")
@@ -124,15 +289,7 @@ class HostProc:
             return self._create_time
         fields = self._stat_fields_after_comm()
         starttime_ticks = int(fields[19])  # stat field 22 = starttime
-        # btime (boot timestamp, secs since epoch) lives in /proc/stat.
-        # Reading it once per HostProc instance is fine — it's a constant
-        # for the life of the kernel.
-        btime_text = self._read("/proc/stat")
-        btime = 0
-        for line in btime_text.splitlines():
-            if line.startswith("btime "):
-                btime = int(line.split()[1])
-                break
+        btime = _read_btime() or 0  # cached module-level; one shell-out per session
         self._create_time = btime + starttime_ticks / _CLOCK_TICKS
         return self._create_time
 
@@ -158,10 +315,13 @@ class HostProc:
         return (total_ticks - prev_ticks) / _CLOCK_TICKS / delta * 100.0
 
     def memory_info(self) -> _MemInfo:
-        try:
-            text = self._read(f"/proc/{self.pid}/status")
-        except OSError:
-            return _MemInfo(rss=0)
+        if self._sample_status is not None:
+            text = self._sample_status
+        else:
+            try:
+                text = self._read(f"/proc/{self.pid}/status")
+            except OSError:
+                return _MemInfo(rss=0)
         for line in text.splitlines():
             if line.startswith("VmRSS:"):
                 parts = line.split()
@@ -332,9 +492,47 @@ class RunningTracker:
         with its own `instance`, `pid`, `branch`, `cpu_percent`,
         `memory_bytes` — sorted by pid so the UI ordering doesn't flicker
         between samples.
+
+        Sandbox fast path: when the process factory is HostProc, we
+        pre-fetch /proc/<pid>/{stat,status} (and any uncached
+        cmdline/comm) for every PID we'll touch in ONE flatpak-spawn
+        invocation, plus one more for `ps -eo pid,ppid` to walk the
+        tree. Without this batching, a single 11-app sample fires ~120
+        flatpak-spawn cats at ~50–100 ms each — visibly slow (~15 s
+        observed). With it, two shell-outs and ~200 ms total.
         """
         instances = self._lister()
         by_app = aggregate_by_app(instances)
+
+        use_batch = self._process_factory is HostProc and bool(instances)
+        parents_map: Optional[Dict[int, int]] = (
+            _fetch_parents_map() if use_batch else None
+        )
+
+        # Walk trees up front so we know every PID before the batch fetch.
+        tree_by_root: Dict[int, List[int]] = {}
+        all_pids: set = set()
+        for inst in instances:
+            root_pid = inst.get("child_pid") or inst["pid"]
+            if parents_map is not None:
+                tree = _walk_descendants(root_pid, parents_map)
+            else:
+                tree = self._tree_pids(root_pid)
+            tree_by_root[root_pid] = tree
+            all_pids.update(tree)
+
+        # Ensure a Process-shaped object exists for every PID (seeds the
+        # cpu_percent delta baseline on the very first sample of a new PID).
+        for pid in all_pids:
+            self._get_process(pid)
+
+        host_procs: Dict[int, HostProc] = {}
+        if use_batch:
+            host_procs = {
+                pid: p for pid, p in self._proc_cache.items()
+                if pid in all_pids and isinstance(p, HostProc)
+            }
+            HostProc.batch_refresh(host_procs)
 
         seen_pids: set = set()
         rows: List[dict] = []
@@ -353,7 +551,7 @@ class RunningTracker:
 
                 inst_cpu = 0.0
                 inst_mem = 0
-                for pid in self._tree_pids(root_pid):
+                for pid in tree_by_root.get(root_pid, [root_pid]):
                     seen_pids.add(pid)
                     cpu, mem = self._sample_pid(pid)
                     inst_cpu += cpu
@@ -398,6 +596,8 @@ class RunningTracker:
                 "sub_instances": sub_instances,
             })
 
+        if use_batch:
+            HostProc.clear_sample_cache(host_procs)
         self._prune_cache(seen_pids)
         return rows
 
