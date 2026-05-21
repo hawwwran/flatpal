@@ -62,26 +62,46 @@
   <screenshots>
     <screenshot type="default">
       <caption>The Running tab with CPU and memory sampled live for each sandbox</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/running-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/running-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Installed tab listing every Flatpak with summary and version</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/installed-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/installed-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Explore tab browsing Flathub by popularity</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/explore-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/explore-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page for an installed app, with the Open app action</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/detail.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/detail.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page showing the app's own screenshots and About metadata</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/detail2.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/detail2.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
+    <release version="0.1.0" date="2026-05-21">
+      <description>
+      <ul>
+        <li>First public release of Flatpal — a calm GTK4/libadwaita overview of your installed, running, and Flathub Flatpaks, with three tabs: Running, Installed, and Explore.</li>
+        <li>Detail page for any app showing screenshots, description, sandbox permissions, and a one-click **Open app** action.</li>
+        <li>Running tab now expands each app into per-sandbox sub-rows showing the command line, with live CPU and memory updates.</li>
+        <li>Freeze-position toggle and refresh-interval picker on the Running tab to keep rows steady while you read them.</li>
+        <li>Clicking the &quot;sorted by …&quot; pill on any tab opens the sort menu, anchored to the header button.</li>
+        <li>Explore tab marks already-installed apps with a mint-teal **Installed** pill.</li>
+      </ul>
+      <ul>
+        <li>Running tab opens with a clear &quot;Looking for running Flatpaks…&quot; loading state instead of a blank &quot;Nothing running&quot; message.</li>
+        <li>Installed tab now shows install dates for apps in non-English locales.</li>
+        <li>Host-installed Flatpak icons (e.g. Black Box) now appear correctly in the Running and Installed tabs.</li>
+        <li>Running tab sampling is roughly 5× faster after the first sample.</li>
+        <li>Tab labels and row layouts hold steady as content loads — no more width or height shifts between samples.</li>
+        <li>Long app titles are truncated cleanly on a single line.</li>
+      </ul>
+      </description>
+    </release>
   </releases>
 </component>
