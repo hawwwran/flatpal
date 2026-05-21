@@ -62,27 +62,35 @@
   <screenshots>
     <screenshot type="default">
       <caption>The Running tab with CPU and memory sampled live for each sandbox</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/running-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/running-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Installed tab listing every Flatpak with summary and version</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/installed-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/installed-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Explore tab browsing Flathub by popularity</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/explore-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/explore-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page for an installed app, with the Open app action</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/detail.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/detail.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page showing the app's own screenshots and About metadata</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.0/data/screenshots/detail2.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/detail2.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
+    <release version="0.1.1" date="2026-05-21">
+      <description>
+      <ul>
+        <li>Screenshot cache now persists between sessions when running as a Flatpak, so detail pages no longer re-download every screenshot on each visit.</li>
+        <li>Startup cache pruning now operates on the correct directory, keeping the screenshot cache from growing unbounded.</li>
+      </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-05-21">
       <description>
       <ul>
