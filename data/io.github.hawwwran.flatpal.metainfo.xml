@@ -73,11 +73,11 @@
       <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/explore-tab.png</image>
     </screenshot>
     <screenshot>
-      <caption>An app's detail page with summary, screenshots, and sandbox permissions</caption>
+      <caption>A detail page for an installed app, with the Open app action</caption>
       <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/detail.png</image>
     </screenshot>
     <screenshot>
-      <caption>The detail page scrolled to show the sandbox-permissions block</caption>
+      <caption>A detail page showing the app's own screenshots and About metadata</caption>
       <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/detail2.png</image>
     </screenshot>
   </screenshots>
