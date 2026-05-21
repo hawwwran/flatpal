@@ -1,0 +1,37 @@
+# Local-development variant of the canonical Flatpak manifest.
+#
+# Identical to io.github.hawwwran.flatpal.yaml except the source is
+# `type: dir, path: .` so flatpak-builder copies the current working
+# tree into the build sandbox instead of fetching a tagged commit
+# from GitHub (which doesn't exist until §10). Use this for the
+# §9 validation loop:
+#
+#   flatpak run org.flatpak.Builder --user --install --force-clean \
+#     build-dir io.github.hawwwran.flatpal.dev.yaml
+#
+# The canonical file stays unchanged — submission still uses
+# tag/commit pinning.
+
+app-id: io.github.hawwwran.flatpal
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: flatpal
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=network
+  - --filesystem=/var/lib/flatpak:ro
+  - --filesystem=xdg-data/flatpak:ro
+  - --talk-name=org.freedesktop.Flatpak
+  - --talk-name=org.gnome.Software
+
+modules:
+  - name: flatpal
+    buildsystem: meson
+    sources:
+      - type: dir
+        path: .

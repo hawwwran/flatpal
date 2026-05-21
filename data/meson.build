@@ -12,7 +12,10 @@ install_data(
 # files keep their flatpal-icon-* basenames in the repo; install renames
 # them to <APP_ID>.png so GNOME Shell matches the running window's
 # xdg-toplevel app_id (= Adw application_id) for the taskbar icon.
-icon_sizes = [16, 24, 32, 48, 64, 96, 128, 192, 256, 512, 1024]
+# Flatpak rejects hicolor icons larger than 512×512 at export time, so the
+# 1024×1024 master in data/ ships only as a source asset (used by the icon
+# pipeline, the .desktop dialog preview on the host, and tools/preview_*).
+icon_sizes = [16, 24, 32, 48, 64, 96, 128, 192, 256, 512]
 foreach size : icon_sizes
   install_data(
     'flatpal-icon-@0@x@0@.png'.format(size),

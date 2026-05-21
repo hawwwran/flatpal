@@ -10,17 +10,9 @@ python = import('python').find_installation('python3')
 
 subdir('flatpal')
 subdir('data')
+subdir('bin')
 
 install_data(
   'LICENSE',
   install_dir: get_option('datadir') / 'licenses' / app_id,
-)
-
-configure_file(
-  input: 'flatpal.in',
-  output: 'flatpal',
-  configuration: {'PYTHON': python.full_path()},
-  install: true,
-  install_dir: get_option('bindir'),
-  install_mode: 'rwxr-xr-x',
 )
