@@ -62,36 +62,26 @@
   <screenshots>
     <screenshot type="default">
       <caption>The Running tab with CPU and memory sampled live for each sandbox</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/running-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/running-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Installed tab listing every Flatpak with summary and version</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/installed-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/installed-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Explore tab browsing Flathub by popularity</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/explore-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/explore-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page for an installed app, with the Open app action</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/detail.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/detail.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page showing the app's own screenshots and About metadata</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/detail2.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.0.0/data/screenshots/detail2.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
-    <release version="0.5.0" date="2026-05-21">
-      <description>
-        <p>First public release.</p>
-        <ul>
-          <li>Running tab: live CPU and memory for every Flatpak sandbox, with per-instance breakdown</li>
-          <li>Installed tab: searchable list with metadata pulled from each app's AppStream entry</li>
-          <li>Explore tab: Flathub browser with popularity, search, screenshots, and sandbox-permission details</li>
-        </ul>
-      </description>
-    </release>
   </releases>
 </component>

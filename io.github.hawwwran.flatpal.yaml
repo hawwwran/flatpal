@@ -37,9 +37,10 @@ modules:
   - name: flatpal
     buildsystem: meson
     sources:
+      # Upstream stays tag-only (Option A in the release plan). The
+      # tag+commit pinning that Flathub requires lives on the Flathub-managed
+      # copy of this manifest, updated per release by tools/release-flatpal.sh
+      # Mode 2.
       - type: git
         url: https://github.com/hawwwran/flatpal.git
-        tag: v0.5.0
-        # commit: <fill in once v0.5.0 is tagged in §10> — Flathub
-        # requires both tag and commit so the build is deterministic
-        # if the tag is ever force-moved.
+        tag: v0.0.0
