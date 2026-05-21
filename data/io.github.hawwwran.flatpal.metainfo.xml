@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.hawwwran.flatpal</id>
+  <name>Flatpal</name>
+  <summary>Browse your Flatpaks</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      Flatpal is a calm, focused overview of the Flatpak apps on your
+      system. It shows what is installed, what is running right now,
+      and what is worth a look on Flathub — three tabs in one window.
+    </p>
+    <p>
+      The Running tab samples CPU and memory for every Flatpak sandbox
+      live, with a per-instance breakdown for apps with more than one
+      window. The Installed tab is a searchable list of your apps with
+      summaries, versions, and update dates pulled from each app's own
+      AppStream metadata. The Explore tab is a browser for Flathub:
+      popular and trending shelves, full-text search, screenshots, and
+      sandbox-permission details on the per-app detail page.
+    </p>
+    <p>
+      Flatpal does not replace flatpak, GNOME Software, or any other
+      tool — it sits next to them and makes it easier to see your
+      Flatpaks at a glance.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.hawwwran.flatpal.desktop</launchable>
+
+  <developer id="io.github.hawwwran">
+    <name>hawwwran</name>
+  </developer>
+
+  <url type="homepage">https://github.com/hawwwran/flatpal</url>
+  <url type="bugtracker">https://github.com/hawwwran/flatpal/issues</url>
+  <url type="vcs-browser">https://github.com/hawwwran/flatpal</url>
+
+  <categories>
+    <category>System</category>
+    <category>Utility</category>
+  </categories>
+
+  <keywords>
+    <keyword>flatpak</keyword>
+    <keyword>flathub</keyword>
+    <keyword>apps</keyword>
+    <keyword>sandbox</keyword>
+    <keyword>manage</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1"/>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#bdc9f0</color>
+    <color type="primary" scheme_preference="dark">#321e44</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>The Running tab with CPU and memory sampled live for each sandbox</caption>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/running-tab.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The Installed tab listing every Flatpak with summary and version</caption>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/installed-tab.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The Explore tab browsing Flathub by popularity</caption>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/explore-tab.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>An app's detail page with summary, screenshots, and sandbox permissions</caption>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/detail.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The detail page scrolled to show the sandbox-permissions block</caption>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.5.0/data/screenshots/detail2.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.5.0" date="2026-05-21">
+      <description>
+        <p>First public release.</p>
+        <ul>
+          <li>Running tab: live CPU and memory for every Flatpak sandbox, with per-instance breakdown</li>
+          <li>Installed tab: searchable list with metadata pulled from each app's AppStream entry</li>
+          <li>Explore tab: Flathub browser with popularity, search, screenshots, and sandbox-permission details</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>
