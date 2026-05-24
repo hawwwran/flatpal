@@ -30,10 +30,19 @@ _LANG_ENV_VARS = ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")
 def system_lang() -> Optional[str]:
     """Return the user's preferred locale code (e.g. 'en_US', 'cs') or None.
 
-    Reads env vars directly in gettext's priority order. `LANGUAGE` may hold
-    a colon-separated preference list ("cs:en"); we take the first entry.
-    Encoding suffixes ("en_US.UTF-8") and modifiers ("de_DE@euro") are
-    stripped so the result matches the shape of AppStream `xml:lang`.
+    Iterates `LANGUAGE → LC_ALL → LC_MESSAGES → LANG` and returns the first
+    set value that isn't `C`/`POSIX`. `LANGUAGE` may hold a colon-separated
+    preference list ("cs:en"); we take the first entry. Encoding suffixes
+    ("en_US.UTF-8") and modifiers ("de_DE@euro") are stripped so the result
+    matches the shape of AppStream `xml:lang`.
+
+    NB: GNU gettext's actual rule is more nuanced — it consults `LANGUAGE`
+    only when one of `LC_ALL`/`LC_MESSAGES`/`LANG` resolves to a non-`C`
+    locale (i.e. translation is enabled). Here `LANGUAGE` always wins when
+    set, which matches what most users intend ("`LANGUAGE=cs` should pick
+    Czech metainfo even if `LC_ALL=C`") and avoids surprising the user with
+    a falsely-English detail page on systems whose `LC_*` are stuck at `C`
+    by a sandbox quirk.
     """
     for var in _LANG_ENV_VARS:
         value = os.environ.get(var, "").strip()
@@ -171,6 +180,12 @@ def _pick_localised_blocks(
     the top level of `<description>` — otherwise the `<li>` translations
     all render side-by-side.
 
+    Empty candidates (no children and no stripped text) are skipped during
+    scoring so a more-specific-but-empty `<p xml:lang="cs"/>` can't beat a
+    populated untagged-English variant for that same bucket. If every
+    candidate for a bucket is empty, the first one encountered is returned
+    so the bucket isn't dropped entirely.
+
     Returns the chosen elements in their first-encountered (display) order.
     """
     counters: dict[Optional[str], dict[str, int]] = {}
@@ -185,16 +200,24 @@ def _pick_localised_blocks(
     chosen: dict[tuple[str, int], ET.Element] = {}
     chosen_scores: dict[tuple[str, int], int] = {}
     chosen_order: dict[tuple[str, int], int] = {}
+    # Last-resort placeholder if every candidate for a bucket is empty.
+    empty_fallback: dict[tuple[str, int], ET.Element] = {}
     order = 0
     for tag, idx, node_lang, el in blocks:
         key = (tag, idx)
+        if key not in chosen_order:
+            chosen_order[key] = order
+            order += 1
+        is_empty = not list(el) and not (el.text or "").strip()
+        if is_empty:
+            empty_fallback.setdefault(key, el)
+            continue
         s = _lang_score(node_lang, lang)
         if s > chosen_scores.get(key, -1):
             chosen[key] = el
             chosen_scores[key] = s
-            if key not in chosen_order:
-                chosen_order[key] = order
-                order += 1
+    for key, el in empty_fallback.items():
+        chosen.setdefault(key, el)
     return [
         el for _, el in sorted(chosen.items(), key=lambda kv: chosen_order[kv[0]])
     ]

@@ -550,12 +550,29 @@ class RunningPage(Gtk.Box):
         each row via `make_running_row` (which re-reads the lookup), then
         rerenders against the cached `_last_rows` so no extra `flatpak
         ps` sampling happens just to add a badge.
+
+        Snapshots and restores any expanded ExpanderRow disclosure state
+        so a user who happened to expand a multi-sandbox row during the
+        first ~2.5 s after launch doesn't see it silently collapse when
+        the worker lands.
         """
+        expanded_ids = {
+            widget.app_id
+            for widget in self._iter_row_widgets()
+            if isinstance(widget, Adw.ExpanderRow) and widget.get_expanded()
+        }
         for widget in list(self._iter_row_widgets()):
             self.listbox.remove(widget)
         self._row_cache.clear()
         if self._last_rows:
             self._render_rows(self._last_rows)
+        if expanded_ids:
+            for widget in self._iter_row_widgets():
+                if (
+                    isinstance(widget, Adw.ExpanderRow)
+                    and widget.app_id in expanded_ids
+                ):
+                    widget.set_expanded(True)
 
     def set_sort(self, key: str) -> None:
         """User-driven sort change. Re-renders from the cached sample."""

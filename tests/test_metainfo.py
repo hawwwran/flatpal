@@ -266,6 +266,35 @@ class TestDescriptionMarkup(unittest.TestCase):
         self.assertIn("• GPU", md)
         self.assertNotIn("• CPU", md)
 
+    def test_empty_per_lang_block_falls_back_to_populated_untagged(self):
+        # An empty <p xml:lang="cs"/> shouldn't suppress the content of the
+        # untagged-English paragraph it overrides — otherwise the cs user
+        # sees one fewer paragraph than every other locale.
+        desc = ET.fromstring(
+            '<description>'
+            '<p>English first</p>'
+            '<p xml:lang="cs"></p>'
+            '<p>English second</p>'
+            '</description>'
+        )
+        md = _description_markup(desc, "cs")
+        self.assertIn("English first", md)
+        self.assertIn("English second", md)
+
+    def test_empty_per_lang_li_falls_back_to_populated_untagged(self):
+        # Same idea but for an interleaved-style list: an empty
+        # <li xml:lang="cs"/> shouldn't drop the bullet for that position.
+        desc = ET.fromstring(
+            '<description><ul>'
+            '<li>CPU</li>'
+            '<li xml:lang="cs"></li>'  # empty cs override
+            '<li>Memory</li>'
+            '</ul></description>'
+        )
+        md = _description_markup(desc, "cs")
+        self.assertIn("• CPU", md)
+        self.assertIn("• Memory", md)
+
 
 class TestParseMetainfoGIMPDescription(unittest.TestCase):
     """End-to-end check on the GIMP fixture — the description used to leak

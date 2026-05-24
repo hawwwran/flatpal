@@ -433,8 +433,9 @@ class DetailPage(Adw.NavigationPage):
 
         # "What's new since v0.1.0" — release notes slice from the metainfo
         # for everything that landed after the installed version. Empty
-        # `releases_since` (no release tags, or installed == latest) leaves
-        # only the version-diff header above.
+        # `releases_since` (no release tags, or installed == latest known)
+        # falls through to the "release notes unavailable" branch below so
+        # the card doesn't look truncated under the version-diff header.
         new_releases = releases_since(meta.get("releases") or [], current)
         if new_releases:
             since = Gtk.Label(label=f"What's new since {current}")
@@ -463,13 +464,22 @@ class DetailPage(Adw.NavigationPage):
                     body.set_xalign(0.0)
                     body.add_css_class("body")
                     outer.append(body)
-        elif current == "?":
-            # Installed version unknown (rare) → no diff possible. Tell the
-            # user explicitly so the empty box isn't mysterious.
-            note = Gtk.Label(label="Installed version unknown — open Software to view release notes.")
+        else:
+            # No body to show: either current is "?" (rare — flatpak list
+            # didn't report a version) or the metainfo's release list
+            # doesn't extend past the installed version (catalog may lag
+            # behind the remote, or upstream tags but doesn't update
+            # metainfo on time). Either way, surface a one-liner so the
+            # card doesn't look truncated under the bare version-diff line.
+            if current == "?":
+                msg = "Installed version unknown — open Software to view release notes."
+            else:
+                msg = "Release notes for the new version aren't available yet."
+            note = Gtk.Label(label=msg)
             note.set_xalign(0.0)
             note.add_css_class("dim-label")
             note.set_wrap(True)
+            note.set_margin_top(8)
             outer.append(note)
 
         return outer
