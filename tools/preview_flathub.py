@@ -144,6 +144,10 @@ def _classify_validation(name: str, raw: str, rc: int) -> tuple[str, list[dict],
 
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))  # so `flatpal.palette` is importable below
+
+from flatpal.palette import PALETTE_ENTRIES  # noqa: E402
+
 DATA = REPO / "data"
 METAINFO = DATA / "io.github.hawwwran.flatpal.metainfo.xml"
 DESKTOP = DATA / "io.github.hawwwran.flatpal.desktop"
@@ -634,6 +638,11 @@ details.lint-raw pre {
   font-size: 0.95rem;
   font-weight: 600;
 }
+.swatch-info .palette-role {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
 
 /* Releases */
 .release {
@@ -896,13 +905,28 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
     cat_tags = "".join(f'<span class="tag">{escape(c)}</span>' for c in info["categories"])
     kw_tags = "".join(f'<span class="tag">{escape(k)}</span>' for k in info["keywords"])
 
-    # Branding
+    # Branding (AppStream-spec: only `type="primary"` with optional
+    # light/dark scheme_preference, so max two entries here).
     branding_html = "\n".join(
         f'<div class="swatch-info">'
         f'<span class="swatch" style="background:{escape(c["value"])}"></span>'
         f'<div><div class="scheme">{escape(c["scheme_preference"] or "—")} scheme</div>'
         f'<div class="hex">{escape(c["value"])}</div></div></div>'
         for c in info["branding"]
+    )
+
+    # Full Flatpal theme palette — read from flatpal/palette.py so this
+    # card stays in sync with the CSS provider that ships in the app.
+    # AppStream's <branding> only carries the primary light/dark pair;
+    # this block surfaces the rest (Mint Teal, Freeze Blue, …) that the
+    # running app actually paints with.
+    palette_html = "\n".join(
+        f'<div class="swatch-info">'
+        f'<span class="swatch" style="background:{escape(value)}"></span>'
+        f'<div><div class="scheme">{escape(name)}</div>'
+        f'<div class="hex">{escape(value)}</div>'
+        f'<div class="palette-role">{escape(role)}</div></div></div>'
+        for name, value, role in PALETTE_ENTRIES
     )
 
     # Releases
@@ -1132,8 +1156,15 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         f'<p style="margin:0;color:var(--muted)"><strong>{escape(cr_type)}</strong>'
         f' — {escape(cr_body)}</p>'
         f"</section>"
-        f'<section class="card"><h2>Branding colors</h2>'
-        f'<div class="branding">{branding_html}</div></section>'
+        f'<section class="card"><h2>Brand colors</h2>'
+        f'<h2 class="section-sub">AppStream &lt;branding&gt; '
+        f'<span style="font-weight:400;color:var(--muted);font-size:0.85rem">'
+        f'— primary, light + dark variants</span></h2>'
+        f'<div class="branding">{branding_html}</div>'
+        f'<h2 class="section-sub">Theme palette '
+        f'<span style="font-weight:400;color:var(--muted);font-size:0.85rem">'
+        f'— flatpal/palette.py</span></h2>'
+        f'<div class="branding">{palette_html}</div></section>'
         + (
             f'<section class="card"><h2>Releases ({len(info["releases"])})</h2>'
             f"{releases_html}</section>"

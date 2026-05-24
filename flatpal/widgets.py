@@ -30,21 +30,45 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gtk  # noqa: E402
 
 
-# Brand palette. Primary purple matches the icon and pairs cleanly with
-# white text (contrast ratio ~9.7:1 against #4B2E5F — passes WCAG AAA).
-# The three later additions extend the palette for the secondary "Installed"
-# marker, future warning/attention surfaces, and the AdwViewSwitcher tab
-# text colour respectively.
-_BRAND_PURPLE = "#4B2E5F"        # primary — sort pill, future hero accents
-_FREEZE_ON_BLUE = "#3584E4"      # toggle "on" state for the freeze pill
-_MINT_TEAL = "#1F9D8A"           # secondary accent — Installed marker
-_WARM_TERRACOTTA = "#B85C3B"     # reserved — warning / attention surfaces
-_DEEP_PETROL_BLUE = "#063B4C"    # foreground — AdwViewSwitcher tab text
+# Brand palette is canonical in flatpal/palette.py — kept there as plain
+# constants (no GTK dep) so tools/preview_flathub.py and any future style-
+# guide tooling can read the same source. Adding a new colour? Edit
+# palette.py and PALETTE_ENTRIES, then wire it into the CSS block below.
+from .palette import (
+    BRAND_PURPLE as _BRAND_PURPLE,
+    DEEP_PETROL_BLUE as _DEEP_PETROL_BLUE,
+    FREEZE_ON_BLUE as _FREEZE_ON_BLUE,
+    MINT_TEAL as _MINT_TEAL,
+    WARM_TERRACOTTA as _WARM_TERRACOTTA,
+)
 
 _PILL_CSS = (
     """
+    /* Brand palette as GTK named colours — the rules below reference
+       them by name (e.g. @flatpal_purple) so the Flatpak release ships a
+       single source of truth for every brand surface. Adding a new hex
+       inline is a code-smell: add it here first and reference it via
+       its name. */
+    @define-color flatpal_purple %(purple)s;
+    @define-color flatpal_mint %(mint)s;
+    @define-color flatpal_freeze_on %(freeze_on)s;
+    @define-color flatpal_terracotta %(terracotta)s;
+    @define-color flatpal_petrol %(petrol)s;
+
+    /* Re-bind libadwaita's accent palette to the brand purple so every
+       widget that reads the accent — Gtk.Switch in the "on" state, focus
+       rings, .suggested-action buttons (e.g. the Retry button on the
+       Explore network-error page), hyperlinks, Adw spinners — picks up
+       the primary brand colour. Done via @define-color rather than
+       AdwStyleManager.set_accent_color so we can pin the exact brand
+       hex instead of libadwaita's PURPLE preset (#8757a4) which sits
+       lighter and less saturated than our brand. */
+    @define-color accent_bg_color @flatpal_purple;
+    @define-color accent_color @flatpal_purple;
+    @define-color accent_fg_color #FFFFFF;
+
     .flatpal-sort-pill {
-        background-color: %(brand)s;
+        background-color: @flatpal_purple;
         color: #FFFFFF;
         padding: 1px 8px;
         border-radius: 9999px;
@@ -52,7 +76,7 @@ _PILL_CSS = (
     }
 
     .flatpal-installed-pill {
-        background-color: %(mint)s;
+        background-color: @flatpal_mint;
         color: #FFFFFF;
         padding: 1px 8px;
         border-radius: 9999px;
@@ -78,12 +102,17 @@ _PILL_CSS = (
     }
     .flatpal-freeze-pill.flatpal-freeze-pill-on,
     .flatpal-freeze-pill.flatpal-freeze-pill-on:checked {
-        background-color: %(freeze_on)s;
+        background-color: @flatpal_freeze_on;
         color: #FFFFFF;
     }
     .flatpal-freeze-pill.flatpal-freeze-pill-on:hover,
     .flatpal-freeze-pill.flatpal-freeze-pill-on:checked:hover {
-        background-color: #5BA0EC;
+        /* GTK CSS shade(c, k) scales the colour's HSL lightness by k.
+           1.15 lifts Freeze Blue (HSL L=55%%) to L=~63%%, matching the
+           old hand-picked #5BA0EC hover constant within 1-2 units per
+           channel - close enough that the perceptual hover delta is
+           preserved without carrying a second hex through the palette. */
+        background-color: shade(@flatpal_freeze_on, 1.15);
     }
 
     /* AdwViewSwitcher tabs (Running / Installed / Explore). Set the base
@@ -92,12 +121,13 @@ _PILL_CSS = (
        background for the active tab; this only re-tones the unselected
        state. */
     .view-switcher button {
-        color: %(petrol)s;
+        color: @flatpal_petrol;
     }
     """ % {
-        "brand": _BRAND_PURPLE,
+        "purple": _BRAND_PURPLE,
         "mint": _MINT_TEAL,
         "freeze_on": _FREEZE_ON_BLUE,
+        "terracotta": _WARM_TERRACOTTA,
         "petrol": _DEEP_PETROL_BLUE,
     }
 ).encode("utf-8")
