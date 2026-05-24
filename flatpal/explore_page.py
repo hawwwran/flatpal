@@ -157,9 +157,9 @@ class ExplorePage(Gtk.Box):
         self._show_popular_switch.set_active(self._show_popular)
         self._show_popular_switch.set_valign(Gtk.Align.CENTER)
         self._show_popular_switch.set_tooltip_text(
-            "Fetch Flathub popularity ranking and show the 'Popular this month' "
-            "shelf when the search is empty. Turn off to skip those network calls "
-            "and keep Explore offline-only — local AppStream catalog search still works."
+            "Show the 'Popular this month' shelf when the search is empty. "
+            "Turning it off only hides the shelf — the popularity sort and "
+            "the per-row install counts keep working."
         )
         self._show_popular_switch.connect("notify::active", self._on_show_popular_toggled)
 
@@ -308,10 +308,15 @@ class ExplorePage(Gtk.Box):
     # ----- public API ------------------------------------------------------
 
     def ensure_data_loaded(self) -> None:
-        """Kick off catalog + popularity fetch on first activation."""
+        """Kick off catalog + popularity fetch on first activation.
+
+        Popularity is fetched unconditionally — the toggle below only hides
+        the empty-state shelf, it doesn't disable the underlying data. Once
+        fetched it's cached for 24 h, so the popularity sort and the install-
+        count chips keep working even when the shelf is hidden.
+        """
         self._ensure_catalog()
-        if self._show_popular:
-            self._ensure_popularity()
+        self._ensure_popularity()
         # Re-render right away so the empty-search state flips from the
         # "Type to search" placeholder to the loading spinner; without this
         # the spinner only appears once one of the worker threads finishes
@@ -319,18 +324,19 @@ class ExplorePage(Gtk.Box):
         self.refresh()
 
     def set_show_popular(self, value: bool) -> None:
-        """Toggle Flathub-specific features (popularity + popular shelf).
-        When True (default), the popular shelf appears in the empty-search
-        state and search results are sorted by install count. Catalog search
-        keeps working either way."""
+        """Toggle the empty-state popular shelf.
+
+        Only affects what appears when the search box is empty: ON shows the
+        "Popular this month" shelf, OFF shows the "Type to search"
+        placeholder. Popularity data itself is always fetched, so the
+        popularity sort and the per-row install-count chips keep working
+        regardless of this setting.
+        """
         if value == self._show_popular:
             return
         self._show_popular = value
         if self._show_popular_switch.get_active() != value:
             self._show_popular_switch.set_active(value)
-        if self._show_popular:
-            # Switching ON: kick off the popularity fetch if we haven't yet.
-            self._ensure_popularity()
         self.refresh()
 
     def _on_show_popular_toggled(self, *_):
@@ -480,14 +486,11 @@ class ExplorePage(Gtk.Box):
                 self._on_render()
             return
 
-        # Skip popularity context entirely when the user has turned off
-        # "Show popular" — results sort alphabetically and rows show no
-        # install counts.
-        idx = (
-            self._popularity_index
-            if self._popularity_loaded and self._show_popular
-            else None
-        )
+        # The "Show popular" toggle only hides the empty-state shelf; we
+        # still want install-count chips on each row and a working
+        # popularity sort here. So thread the loaded index through search
+        # results regardless of the toggle.
+        idx = self._popularity_index if self._popularity_loaded else None
         all_results = search_catalog(
             self._catalog, installed_ids, query,
             limit=MAX_LIMIT,
