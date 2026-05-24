@@ -71,31 +71,52 @@
   <screenshots>
     <screenshot type="default">
       <caption>The Running tab with CPU and memory sampled live for each sandbox</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/running-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/running-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Installed tab listing every Flatpak with summary and version</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/installed-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/installed-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Explore tab browsing Flathub by popularity</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/explore-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/explore-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page for an installed app, with the Open app action</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/detail.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/detail.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page surfacing an available update with the version diff and inline release notes</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/detail-update.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/detail-update.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page showing the app's own screenshots and About metadata</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.1.1/data/screenshots/detail2.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/detail2.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
+    <release version="0.2.0" date="2026-05-24">
+      <description>
+      <ul>
+        <li>New &quot;Update available&quot; badges appear on every tab when a Flatpak update is waiting, with a tinted card on the app detail page showing the version jump and inline release notes for each version between installed and available.</li>
+      </ul>
+      <ul>
+        <li>The &quot;Show popular&quot; toggle on Explore now only hides the empty-state shelf — popularity sorting and per-row install counts keep working when it&#x27;s off.</li>
+        <li>Explore&#x27;s popular shelf now shows a clear loading state and a Retry button if the Flathub connection fails, instead of silently falling back to the search placeholder.</li>
+        <li>The libadwaita accent colour is now bound to Flatpal&#x27;s brand purple, so switches, focus rings, links, and suggested-action buttons match the rest of the app.</li>
+        <li>Running tab rows now line up cleanly along the right edge whether they&#x27;re single- or multi-sandbox.</li>
+        <li>Explore rows anchor the install count to the right of the Installed pill for a tidier layout.</li>
+        <li>Preferences (last tab, sort keys, &quot;Show popular&quot; toggle) and the popularity cache now persist across launches inside the Flatpak sandbox.</li>
+        <li>A new screenshot on Flathub and in the README previews the &quot;Update available&quot; detail card.</li>
+      </ul>
+      <ul>
+        <li>App descriptions now render in your system language instead of always falling back to English, and empty translations no longer beat populated English text.</li>
+        <li>When release notes for a new version aren&#x27;t published yet, the update card says so instead of looking truncated.</li>
+        <li>Expanded multi-sandbox rows stay expanded when the update badges arrive shortly after launch.</li>
+      </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-05-21">
       <description>
       <ul>
