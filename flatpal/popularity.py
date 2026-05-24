@@ -25,9 +25,21 @@ from . import __version__ as _VERSION
 POPULAR_URL = "https://flathub.org/api/v2/collection/popular"
 DEFAULT_PER_PAGE = 250
 DEFAULT_PAGES = 4
-DEFAULT_CACHE_PATH = Path(
-    os.path.expanduser("~/.cache/flatpal/flathub-popular.json")
-)
+
+
+def _default_cache_path() -> Path:
+    """XDG-respecting cache file for the popularity snapshot.
+
+    Mirrors `cache._default_cache_dir`: inside the Flatpak sandbox
+    `$XDG_CACHE_HOME` points at `~/.var/app/<APP_ID>/cache` (persistent);
+    hardcoding `~/.cache` writes into an ephemeral overlay that never survives
+    the sandbox exit, so every launch ended up re-fetching from Flathub.
+    """
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return Path(base) / "flatpal" / "flathub-popular.json"
+
+
+DEFAULT_CACHE_PATH = _default_cache_path()
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
 USER_AGENT = f"Flatpal/{_VERSION} (+local)"
 

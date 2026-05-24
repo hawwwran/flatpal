@@ -1,6 +1,7 @@
 """Persistent app settings.
 
-A small dict round-tripped through `~/.config/flatpal/settings.json`. Pure
+A small dict round-tripped through `$XDG_CONFIG_HOME/flatpal/settings.json`
+(== `~/.config/flatpal/settings.json` when the variable isn't set). Pure
 helpers — no GTK, easily tested. Failures are silent: missing/corrupt files
 yield defaults, write errors are swallowed (a missing setting beats a
 crashed app).
@@ -17,7 +18,19 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-DEFAULT_PATH = Path(os.path.expanduser("~/.config/flatpal/settings.json"))
+def _default_path() -> Path:
+    """XDG-respecting settings file location.
+
+    Inside the Flatpak sandbox `$XDG_CONFIG_HOME` is set to the per-app
+    persistent `~/.var/app/<APP_ID>/config`; the bare `~/.config` path
+    lands in an ephemeral overlay so every launch reverted to defaults
+    (last tab, sort order, "show popular" toggle).
+    """
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return Path(base) / "flatpal" / "settings.json"
+
+
+DEFAULT_PATH = _default_path()
 
 DEFAULTS: Dict[str, Any] = {
     # Which tab was visible when the window was last closed. On launch we

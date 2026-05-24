@@ -189,8 +189,9 @@ class ExplorePage(Gtk.Box):
         self._loading_spinner = Gtk.Spinner()
         self._loading_spinner.set_size_request(48, 48)
         self._loading_spinner.start()
+        self._loading_label = Gtk.Label(label="Loading Flathub catalog…")
         loading.append(self._loading_spinner)
-        loading.append(Gtk.Label(label="Loading Flathub catalog…"))
+        loading.append(self._loading_label)
         self.stack.add_named(loading, "loading")
 
         # Popular shelf (default empty state once popularity loaded).
@@ -211,6 +212,27 @@ class ExplorePage(Gtk.Box):
             description="Try a different search term.",
         )
         self.stack.add_named(empty, "empty")
+
+        # Network-error state: Flathub popularity fetch returned empty (DNS
+        # blip, sandbox network issue, Flathub down). Without this the empty
+        # search state silently fell back to the "Type to search" placeholder
+        # and the user couldn't tell anything had failed or retry without
+        # restarting the app.
+        popularity_error = Adw.StatusPage(
+            icon_name="network-error-symbolic",
+            title="Couldn't load popular apps",
+            description=(
+                "We couldn't reach Flathub to load the popular apps list. "
+                "Check your network connection and try again. Search still works."
+            ),
+        )
+        retry_btn = Gtk.Button(label="Retry")
+        retry_btn.add_css_class("suggested-action")
+        retry_btn.add_css_class("pill")
+        retry_btn.set_halign(Gtk.Align.CENTER)
+        retry_btn.connect("clicked", lambda *_: self._retry_popularity())
+        popularity_error.set_child(retry_btn)
+        self.stack.add_named(popularity_error, "popularity_error")
 
         self.stack.set_visible_child_name("placeholder")
         # Hook spinner lifecycle to stack child so it doesn't sit "started"
@@ -291,6 +313,11 @@ class ExplorePage(Gtk.Box):
         self._ensure_catalog()
         if self._show_popular:
             self._ensure_popularity()
+        # Re-render right away so the empty-search state flips from the
+        # "Type to search" placeholder to the loading spinner; without this
+        # the spinner only appears once one of the worker threads finishes
+        # and calls refresh() itself.
+        self.refresh()
 
     def set_show_popular(self, value: bool) -> None:
         """Toggle Flathub-specific features (popularity + popular shelf).
@@ -553,19 +580,62 @@ class ExplorePage(Gtk.Box):
             )
             return
 
-        # Catalog not loaded yet → spinner.
-        if not self._catalog_loaded and self._catalog_loading:
+        # Either dataset still loading → spinner. Previously only the catalog
+        # phase had a spinner and the popularity phase silently fell back to
+        # the placeholder, so when popularity took a beat to arrive the user
+        # saw "Type to search" and assumed the popular shelf was missing.
+        catalog_busy = not self._catalog_loaded and self._catalog_loading
+        popularity_busy = not self._popularity_loaded and self._popularity_loading
+        if catalog_busy or popularity_busy:
+            self._loading_label.set_label(
+                "Loading Flathub catalog…" if catalog_busy
+                else "Loading popular apps from Flathub…"
+            )
             self.stack.set_visible_child_name("loading")
             self.status_label.set_label("")
             self.sort_pill.set_visible(False)
+            self.search_more_btn.set_visible(False)
+            self.popular_more_btn.set_visible(False)
             return
 
-        # Loaded but no popularity (network failure / not loaded yet) → placeholder.
+        # Popularity fetch finished with no hits (network failure, all four
+        # pages failed). Show a retry surface — without one the only way to
+        # recover was to quit and relaunch.
+        if self._catalog_loaded and self._popularity_loaded and not self._popularity_hits:
+            self.stack.set_visible_child_name("popularity_error")
+            self.status_label.set_label("")
+            self.sort_pill.set_visible(False)
+            self.search_more_btn.set_visible(False)
+            self.popular_more_btn.set_visible(False)
+            return
+
+        # Fallback: neither fetch started yet (e.g. tab opened with Show
+        # popular turned on but ensure_data_loaded hasn't fired). Land on
+        # the same placeholder we use when Show popular is off.
         self.stack.set_visible_child_name("placeholder")
         self.status_label.set_label("")
         self.sort_pill.set_visible(False)
         self.search_more_btn.set_visible(False)
         self.popular_more_btn.set_visible(False)
+
+    def _retry_popularity(self):
+        """Re-arm the popularity fetch after a network failure.
+
+        `_ensure_popularity` short-circuits when `_popularity_loaded` is true,
+        so we drop the loaded flag (and the empty hits/index that landed on
+        the previous attempt) before re-firing the worker. Also clear the
+        loading flag defensively in case a future state-machine path lets
+        us reach Retry with a stale loading=True (today the error stack
+        child only renders once loading has already flipped to False).
+        """
+        self._popularity_loaded = False
+        self._popularity_loading = False
+        self._popularity_hits = []
+        self._popularity_index = {}
+        self._popularity_pages_done = 0
+        self._popularity_pages_total = 0
+        self._ensure_popularity()
+        self.refresh()
 
     def _update_more_button(self, btn: Gtk.Button, visible_count: int, total: int):
         remaining = total - visible_count
