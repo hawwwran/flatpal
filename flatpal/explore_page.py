@@ -50,6 +50,13 @@ class ExploreRow(Adw.ActionRow):
         icon = self._build_icon(entry)
         self.add_prefix(icon)
 
+        # Suffix order matters: add_suffix appends left-to-right, so the
+        # Installed pill goes on first (sits to the left) and the install-
+        # count chip goes on last so it always anchors the right edge of
+        # the row.
+        if entry.get("installed"):
+            self.add_suffix(make_installed_pill())
+
         pop = entry.get("popularity")
         if pop and pop.get("installs_last_month"):
             installs = pop["installs_last_month"]
@@ -60,9 +67,6 @@ class ExploreRow(Adw.ActionRow):
             label.set_valign(Gtk.Align.CENTER)
             label.set_tooltip_text(f"{installs:,} installs in the past month")
             self.add_suffix(label)
-
-        if entry.get("installed"):
-            self.add_suffix(make_installed_pill())
 
     def _build_icon(self, entry: dict) -> Gtk.Image:
         cached: Optional[Path] = entry.get("cached_icon")
