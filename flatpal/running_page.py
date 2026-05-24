@@ -164,21 +164,58 @@ class _SubInstanceRow(Adw.ActionRow):
 class RunningRow(Adw.ActionRow):
     """Single-sandbox row. Click anywhere → opens the detail page.
 
+    Mirrors the suffix layout of `RunningExpanderRow` so single- and
+    multi-sandbox rows align visually:
+      `[stats] [detail arrow] [bullet]`
+    where the bullet stands in for the expander chevron that ExpanderRow
+    draws for multi-sandbox apps. The bullet's tooltip explains the slot's
+    meaning ("single flatpak sandbox running"). Note that Adw.ActionRow's
+    `add_suffix` *appends* (unlike Adw.ExpanderRow which prepends), so the
+    first call here lands on the left.
+
     `update(row)` mutates the title/subtitle/stats in place; the icon is set
     once because it depends on app_id which is stable for the row's lifetime.
     """
 
-    def __init__(self, row: dict, installed_lookup: Callable[[str], Optional[dict]]):
+    def __init__(
+        self,
+        row: dict,
+        installed_lookup: Callable[[str], Optional[dict]],
+        on_open_detail: Callable[[str], None],
+    ):
         super().__init__()
         self.app_id = row["id"]
         self._installed_lookup = installed_lookup
         self.set_activatable(True)
 
         self.add_prefix(_build_app_icon(self.get_display(), row["id"]))
+
         stats_box, self._cpu_label, self._mem_label = _build_stats_box(
             row["cpu_percent"], row["memory_bytes"],
         )
+
+        open_btn = Gtk.Button.new_from_icon_name("go-next-symbolic")
+        open_btn.add_css_class("flat")
+        open_btn.set_valign(Gtk.Align.CENTER)
+        open_btn.set_tooltip_text("Open details page")
+        open_btn.connect("clicked", lambda _b: on_open_detail(self.app_id))
+
+        bullet = Gtk.Label(label="•")
+        bullet.add_css_class("dim-label")
+        bullet.set_valign(Gtk.Align.CENTER)
+        # Match the libadwaita expander-arrow image's natural width (19 px on
+        # GNOME 50) and centre the dot inside that slot, so single- and
+        # multi-sandbox rows share the same right-edge column. Without the
+        # forced width the bullet's natural ~8 px shifts everything to its
+        # left by 11 px relative to ExpanderRow's chevron.
+        bullet.set_size_request(19, -1)
+        bullet.set_xalign(0.5)
+        bullet.set_tooltip_text("Single flatpak sandbox running")
+
         self.add_suffix(stats_box)
+        self.add_suffix(open_btn)
+        self.add_suffix(bullet)
+
         self.update(row)
 
     def update(self, row: dict) -> None:
@@ -212,20 +249,24 @@ class RunningExpanderRow(Adw.ExpanderRow):
         self._sub_cache: dict = {}
 
         self.add_prefix(_build_app_icon(self.get_display(), row["id"]))
+
+        # Suffix order: stats on the left, then the detail-open arrow last so
+        # it sits immediately next to the expander chevron that
+        # Adw.ExpanderRow draws on the far right. Body click toggles the
+        # expander, so we need this dedicated affordance to reach the detail
+        # page; keeping it next to the chevron groups the two "navigate"
+        # controls together visually.
         stats_box, self._cpu_label, self._mem_label = _build_stats_box(
             row["cpu_percent"], row["memory_bytes"],
         )
-        self.add_suffix(stats_box)
-
-        # Body click toggles the expander, so we need a dedicated affordance to
-        # reach the detail page. Flat icon button keeps it visually quiet
-        # alongside the expander chevron that Adw.ExpanderRow draws.
         open_btn = Gtk.Button.new_from_icon_name("go-next-symbolic")
         open_btn.add_css_class("flat")
         open_btn.set_valign(Gtk.Align.CENTER)
         open_btn.set_tooltip_text("Open details page")
         open_btn.connect("clicked", lambda _b: on_open_detail(self.app_id))
+
         self.add_suffix(open_btn)
+        self.add_suffix(stats_box)
 
         self.update(row)
 
@@ -274,7 +315,7 @@ def make_running_row(
 ):
     if row.get("instances", 1) > 1:
         return RunningExpanderRow(row, installed_lookup, on_open_detail)
-    return RunningRow(row, installed_lookup)
+    return RunningRow(row, installed_lookup, on_open_detail)
 
 
 def _expected_row_type(row: dict):
