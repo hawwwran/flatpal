@@ -1,10 +1,13 @@
 """Tests for flatpal.metainfo using real metainfo XML fixtures."""
 
+import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from flatpal.metainfo import (
     parse_metainfo,
+    system_lang,
     _description_markup,
     _empty_result,
 )
@@ -279,6 +282,110 @@ class TestParseMetainfoGIMPDescription(unittest.TestCase):
                 line and line[0].isspace(),
                 f"continuation line is indented: {line!r}",
             )
+
+
+class TestPerLangDescriptionElements(unittest.TestCase):
+    """Flathub's aggregated catalog ships per-language `<description>` blocks
+    at the top of `<component>` (untagged + xml:lang variants), not interleaved
+    children inside one `<description>`. parse_component used to call
+    `root.find("description")` which always returns the first element — when
+    the catalog put a non-English block first, an en_US user saw the wrong
+    language."""
+
+    XML = """<component>
+      <id>x.y.Z</id>
+      <name>App</name>
+      <description xml:lang="cs"><p>Český popis</p></description>
+      <description><p>English description</p></description>
+      <description xml:lang="de"><p>Deutsche Beschreibung</p></description>
+    </component>"""
+
+    def test_no_lang_picks_untagged(self):
+        data = parse_metainfo(self.XML, lang=None)
+        self.assertEqual(data["description_markup"], "English description")
+
+    def test_en_us_picks_untagged(self):
+        data = parse_metainfo(self.XML, lang="en_US")
+        self.assertEqual(data["description_markup"], "English description")
+
+    def test_cs_picks_czech(self):
+        data = parse_metainfo(self.XML, lang="cs")
+        self.assertEqual(data["description_markup"], "Český popis")
+
+    def test_de_picks_german(self):
+        data = parse_metainfo(self.XML, lang="de_DE")
+        self.assertEqual(data["description_markup"], "Deutsche Beschreibung")
+
+    def test_empty_preferred_lang_falls_back_to_populated_variant(self):
+        # A more-specific-but-empty <description xml:lang="cs"/> shouldn't
+        # beat an untagged-English one that actually has content — the
+        # detail page would otherwise render blank for cs users.
+        xml = """<component>
+          <id>x</id>
+          <description xml:lang="cs"/>
+          <description><p>English description</p></description>
+        </component>"""
+        data = parse_metainfo(xml, lang="cs")
+        self.assertEqual(data["description_markup"], "English description")
+
+    def test_release_description_is_localised_per_element(self):
+        xml = """<component>
+          <id>x</id>
+          <releases>
+            <release version="1.0" date="2025-01-01">
+              <description xml:lang="cs"><p>Verze 1.0</p></description>
+              <description><p>Version 1.0</p></description>
+            </release>
+          </releases>
+        </component>"""
+        data = parse_metainfo(xml, lang="en_US")
+        self.assertEqual(data["releases"][0]["description_markup"], "Version 1.0")
+        data_cs = parse_metainfo(xml, lang="cs")
+        self.assertEqual(data_cs["releases"][0]["description_markup"], "Verze 1.0")
+
+
+class TestSystemLang(unittest.TestCase):
+    def _isolated_env(self, **overrides):
+        """Wipe all locale env vars, then layer `overrides` on top."""
+        wiped = {k: "" for k in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")}
+        wiped.update(overrides)
+        return mock.patch.dict(os.environ, wiped, clear=False)
+
+    def test_returns_none_when_unset(self):
+        with self._isolated_env():
+            self.assertIsNone(system_lang())
+
+    def test_reads_lang_when_only_lang_set(self):
+        with self._isolated_env(LANG="en_US.UTF-8"):
+            self.assertEqual(system_lang(), "en_US")
+
+    def test_lc_messages_overrides_lang(self):
+        with self._isolated_env(LANG="cs_CZ.UTF-8", LC_MESSAGES="en_US.UTF-8"):
+            self.assertEqual(system_lang(), "en_US")
+
+    def test_lc_all_overrides_lc_messages(self):
+        with self._isolated_env(
+            LC_MESSAGES="en_US.UTF-8", LC_ALL="de_DE.UTF-8"
+        ):
+            self.assertEqual(system_lang(), "de_DE")
+
+    def test_language_overrides_everything_and_picks_first(self):
+        with self._isolated_env(
+            LANGUAGE="cs:en_US",
+            LC_ALL="de_DE.UTF-8",
+            LANG="fr_FR.UTF-8",
+        ):
+            self.assertEqual(system_lang(), "cs")
+
+    def test_c_and_posix_are_skipped(self):
+        with self._isolated_env(LC_ALL="C", LANG="en_US.UTF-8"):
+            self.assertEqual(system_lang(), "en_US")
+        with self._isolated_env(LC_ALL="POSIX", LANG="en_US.UTF-8"):
+            self.assertEqual(system_lang(), "en_US")
+
+    def test_strips_modifier(self):
+        with self._isolated_env(LANG="de_DE.UTF-8@euro"):
+            self.assertEqual(system_lang(), "de_DE")
 
 
 if __name__ == "__main__":

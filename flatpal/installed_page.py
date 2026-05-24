@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import locale
 from typing import Callable, Iterable, List, Optional
 
 import gi
@@ -12,7 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from .core import fetch_apps, format_date, sort_apps
-from .metainfo import load_metainfo
+from .metainfo import load_metainfo, system_lang
 from .search import filter_installed
 from .widgets import make_sort_pill
 
@@ -43,11 +42,6 @@ def _clamp_child(widget: Gtk.Widget) -> Adw.Clamp:
     clamp.set_child(widget)
     clamp.set_hexpand(True)
     return clamp
-
-
-def _current_lang() -> Optional[str]:
-    code, _ = locale.getlocale(locale.LC_MESSAGES)
-    return code or None
 
 
 def enrich_with_metainfo(
@@ -190,7 +184,7 @@ class InstalledPage(Gtk.Box):
         apps = fetch_apps()
         # AppStream metainfo populates summary + developer_name so the search
         # placeholder ("name, ID, developer or summary") is honest.
-        enrich_with_metainfo(apps, lang=_current_lang())
+        enrich_with_metainfo(apps, lang=system_lang())
         self.apps = apps
         self._render()
 

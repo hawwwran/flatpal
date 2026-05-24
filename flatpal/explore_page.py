@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import locale
 import threading
 from pathlib import Path
 from typing import Callable, Optional, Set
@@ -15,6 +14,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from .catalog import load_catalog
 from .constants import INITIAL_LIMIT, LOAD_MORE_INCREMENT, MAX_LIMIT
+from .metainfo import system_lang
 from .popularity import format_install_count, load_popular, popularity_index
 from .search import popular_shelf, search_catalog
 from .widgets import make_installed_pill, make_sort_pill
@@ -23,11 +23,6 @@ from .widgets import make_installed_pill, make_sort_pill
 # Lock search bar, status row and listboxes to the same width so the input
 # visually lines up with the list rows below it.
 LIST_MAX_WIDTH = 900
-
-
-def _current_lang() -> Optional[str]:
-    code, _ = locale.getlocale(locale.LC_MESSAGES)
-    return code or None
 
 
 class ExploreRow(Adw.ActionRow):
@@ -369,7 +364,7 @@ class ExplorePage(Gtk.Box):
         if self._last_query.strip():
             self.stack.set_visible_child_name("loading")
 
-        lang = _current_lang()
+        lang = system_lang()
 
         def worker():
             # Catch *anything* so the finish() callback always fires and the

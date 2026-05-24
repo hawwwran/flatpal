@@ -5,15 +5,47 @@ Pure logic, no GTK. Tested via fixture XML files under tests/fixtures/.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
+_log = logging.getLogger("flatpal.metainfo")
+
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 
 URL_KEYS = ("homepage", "bugtracker", "donation", "help", "vcs-browser", "contribute", "contact")
+
+# Env vars consulted in priority order — same chain GNU gettext uses. We can't
+# rely on `locale.getlocale(LC_MESSAGES)` because Python initialises the locale
+# to "C" until `setlocale(LC_ALL, "")` is called, which Flatpal never does;
+# without this helper every install ran with `lang=None`, so any metainfo whose
+# untagged baseline wasn't English (a common upstream bug) ended up displayed
+# in the upstream's local language even on en_US systems.
+_LANG_ENV_VARS = ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG")
+
+
+def system_lang() -> Optional[str]:
+    """Return the user's preferred locale code (e.g. 'en_US', 'cs') or None.
+
+    Reads env vars directly in gettext's priority order. `LANGUAGE` may hold
+    a colon-separated preference list ("cs:en"); we take the first entry.
+    Encoding suffixes ("en_US.UTF-8") and modifiers ("de_DE@euro") are
+    stripped so the result matches the shape of AppStream `xml:lang`.
+    """
+    for var in _LANG_ENV_VARS:
+        value = os.environ.get(var, "").strip()
+        if not value or value == "C" or value == "POSIX":
+            continue
+        first = value.split(":", 1)[0]
+        first = first.split(".", 1)[0]
+        first = first.split("@", 1)[0]
+        _log.debug("system_lang picked %r from %s=%r", first, var, value)
+        return first or None
+    _log.debug("system_lang: no usable env var, returning None")
+    return None
 
 # Collapse internal whitespace runs in `<p>`/`<li>` text. AppStream metainfo
 # frequently wraps paragraph content across multiple indented source lines
@@ -61,13 +93,63 @@ def _lang_score(node_lang: Optional[str], wanted: Optional[str]) -> int:
 
 
 def _pick_localised(parent: ET.Element, tag: str, lang: Optional[str]) -> Optional[str]:
-    best_text, best_score = None, -1
+    best_text, best_score, best_lang = None, -1, None
+    candidates: list[tuple[Optional[str], int]] = []
     for el in parent.findall(tag):
-        score = _lang_score(el.attrib.get(XML_LANG), lang)
+        node_lang = el.attrib.get(XML_LANG)
+        score = _lang_score(node_lang, lang)
+        candidates.append((node_lang, score))
         if score > best_score and el.text:
             best_text = el.text.strip()
             best_score = score
+            best_lang = node_lang
+    if candidates and _log.isEnabledFor(logging.DEBUG):
+        _log.debug(
+            "_pick_localised tag=%s wanted=%r → chose lang=%r (score=%d) from %s",
+            tag, lang, best_lang, best_score, candidates,
+        )
     return best_text
+
+
+def _pick_localised_element(
+    parent: ET.Element, tag: str, lang: Optional[str],
+) -> Optional[ET.Element]:
+    """Return the best-scoring child element with `tag` (or None).
+
+    Unlike `_pick_localised` (which returns text), this returns the actual
+    Element so callers can still walk its children. AppStream sometimes
+    emits one whole `<description xml:lang="cs">` block per language at the
+    top level (alongside an untagged English one) — without picking among
+    them first, `parent.find(tag)` always returned source-order index 0,
+    which for the Flathub aggregated catalog frequently isn't English.
+
+    Empty candidates (no children and no text) are skipped during scoring
+    so a more-specific-but-empty `<description xml:lang="cs"/>` can't beat
+    an untagged-English variant that actually has content. As a last
+    resort, if every candidate is empty we still return the first one
+    encountered so the caller's `is not None` checks continue to work.
+    """
+    best_el, best_score, best_lang = None, -1, None
+    candidates: list[tuple[Optional[str], int]] = []
+    fallback: Optional[ET.Element] = None
+    for el in parent.findall(tag):
+        if fallback is None:
+            fallback = el
+        node_lang = el.attrib.get(XML_LANG)
+        score = _lang_score(node_lang, lang)
+        candidates.append((node_lang, score))
+        if not list(el) and not (el.text or "").strip():
+            continue
+        if score > best_score:
+            best_el = el
+            best_score = score
+            best_lang = node_lang
+    if candidates and _log.isEnabledFor(logging.DEBUG):
+        _log.debug(
+            "_pick_localised_element tag=%s wanted=%r → chose lang=%r (score=%d) from %s",
+            tag, lang, best_lang, best_score, candidates,
+        )
+    return best_el if best_el is not None else fallback
 
 
 def _pick_localised_blocks(
@@ -128,6 +210,13 @@ def _description_markup(desc: Optional[ET.Element], lang: Optional[str]) -> str:
     """
     if desc is None:
         return ""
+
+    if _log.isEnabledFor(logging.DEBUG):
+        seen = [
+            (el.tag, el.attrib.get(XML_LANG))
+            for el in list(desc)
+        ]
+        _log.debug("_description_markup wanted=%r children=%s", lang, seen)
 
     parts: list[str] = []
     for el in _pick_localised_blocks(list(desc), lang):
@@ -215,7 +304,7 @@ def _releases(root: ET.Element, lang: Optional[str], limit: int = 5) -> list:
     for r in rel.findall("release"):
         version = r.attrib.get("version", "").strip()
         date = r.attrib.get("date", "").strip()
-        desc = r.find("description")
+        desc = _pick_localised_element(r, "description", lang)
         markup = _description_markup(desc, lang) if desc is not None else ""
         out.append({"version": version, "date": date, "description_markup": markup})
         if len(out) >= limit:
@@ -233,7 +322,9 @@ def parse_component(root: ET.Element, lang: Optional[str] = None) -> dict:
         "id": (root.findtext("id") or "").strip(),
         "name": _pick_localised(root, "name", lang) or "",
         "summary": _pick_localised(root, "summary", lang) or "",
-        "description_markup": _description_markup(root.find("description"), lang),
+        "description_markup": _description_markup(
+            _pick_localised_element(root, "description", lang), lang,
+        ),
         "developer_name": _developer_name(root, lang),
         "project_license": (root.findtext("project_license") or "").strip() or None,
         "categories": _categories(root),
@@ -280,6 +371,7 @@ def load_metainfo(app_id: str, lang: Optional[str] = None) -> dict:
     degrade the detail page, not crash it.
     """
     path = find_metainfo_path(app_id)
+    _log.info("load_metainfo app_id=%s lang=%r path=%s", app_id, lang, path)
     if path is None:
         return _empty_result()
     try:

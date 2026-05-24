@@ -8,7 +8,6 @@ are downloaded lazily into the on-disk cache and swapped in once ready.
 
 from __future__ import annotations
 
-import locale
 import subprocess
 import threading
 from pathlib import Path
@@ -24,16 +23,9 @@ from .cache import get_cached_or_download
 from .constants import THUMB_H, THUMB_W
 from .core import format_date
 from .host import host_cmd
-from .metainfo import load_metainfo
+from .metainfo import load_metainfo, system_lang
 from .permissions import parse_flatpak_metadata, summarize_permissions
 from .screenshot_viewer import ScreenshotViewer
-
-
-def _current_lang() -> Optional[str]:
-    code, _ = locale.getlocale(locale.LC_MESSAGES)
-    if code:
-        return code
-    return None
 
 
 def open_in_software(app_id: str) -> None:
@@ -177,7 +169,7 @@ class DetailPage(Adw.NavigationPage):
         install-date, branch, origin. Metainfo is read from the on-disk
         AppStream XML, and sandbox permissions from `flatpak info -m`.
         """
-        meta = load_metainfo(app["id"], lang=_current_lang())
+        meta = load_metainfo(app["id"], lang=system_lang())
         return cls(app=app, parent_window=parent_window, installed=True, meta=meta)
 
     @classmethod

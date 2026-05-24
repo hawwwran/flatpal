@@ -7,6 +7,7 @@ python.install_sources(
     'catalog.py',
     'constants.py',
     'core.py',
+    'debuglog.py',
     'detail.py',
     'explore_page.py',
     'host.py',
