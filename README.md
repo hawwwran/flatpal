@@ -93,6 +93,10 @@ summary plus version, size and install date. Catalog-only apps land on
 the same page minus the install-specific fields — same layout, less
 clutter.
 
+<p align="center">
+  <img src="data/screenshots/detail-update.png" alt="Detail page — Update available card with version diff and release notes" width="480">
+</p>
+
 When the app you're looking at has a pending update, a tinted **Update
 available** card slots in under the hero with the version diff
 (`{current} → {new} · on {origin}`) and inline release notes for every
