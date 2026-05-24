@@ -52,7 +52,10 @@ Every app deployed on the machine, each with its icon, version, on-disk
 size and the date you first installed it. Start typing anywhere in the
 window to filter by name, app ID, developer or summary — the search box
 is always focused, you never have to click into it. Sort by name, install
-date (newest first by default), or size.
+date (newest first by default), or size. Any app whose remote has a
+newer version picks up a small terracotta **Update available** pill on
+its row (the same pill shows on the Running and Explore tabs whenever
+the affected app appears there).
 
 ### Explore
 
@@ -69,9 +72,11 @@ you already have wear a small "Installed" badge.
 
 Empty search shows a **"Popular on Flathub"** shelf — the top apps right
 now, ready to click. Lists start at 50 entries with a *Show more* button
-that extends 50 at a time, up to the full top-1000. Don't want the
-network calls? Flip the **Show popular** switch off and Explore stays
-fully offline (local AppStream search still works).
+that extends 50 at a time, up to the full top-1000. The **Show popular**
+switch on the right hides the empty-state shelf when you'd rather see a
+plain "Type to search" placeholder; the popularity sort and the per-row
+install-count chips keep working regardless, because the underlying
+Flathub call is cached for 24 h either way.
 
 ## The detail page
 
@@ -87,6 +92,13 @@ issue-tracker links, and (for installed apps) a compact sandbox-permissions
 summary plus version, size and install date. Catalog-only apps land on
 the same page minus the install-specific fields — same layout, less
 clutter.
+
+When the app you're looking at has a pending update, a tinted **Update
+available** card slots in under the hero with the version diff
+(`{current} → {new} · on {origin}`) and inline release notes for every
+version between the one you have and the one on the remote — pulled
+from the Flathub catalog's release list, not the local metainfo, so the
+notes for versions newer than what's installed are visible.
 
 Click a screenshot to open it **borderless fullscreen** on the same
 monitor as the Flatpal window, with arrow-key navigation through the
@@ -170,14 +182,18 @@ flatpal/                Python package
   screenshot_viewer.py  Borderless fullscreen gallery
   navigator.py          Wraparound image navigator (pure)
   catalog.py            Flathub appstream.xml.gz streaming loader (pure)
-  metainfo.py           AppStream metainfo XML parser (pure)
+  metainfo.py           AppStream metainfo XML parser + locale picker (pure)
   permissions.py        `flatpak info -m` parser + summariser (pure)
   popularity.py         Flathub /collection/popular fetcher + cache (pure)
+  updates.py            `flatpak remote-ls --updates` parser + release-diff (pure)
   cache.py              Screenshot on-disk cache + downloader
   search.py             Search/filter helpers (pure)
   core.py               flatpak list / history parsing, sort (pure)
   settings.py           JSON-on-disk preferences (last tab, sort orders, …) (pure)
-  widgets.py            Shared small widgets (sort pill, freeze pill, …)
+  widgets.py            Shared small widgets (sort pill, freeze pill, update pill, …)
+  palette.py            Brand palette constants — shared with tools/preview_flathub.py (pure)
+  host.py               `flatpak-spawn --host` wrapper for sandboxed subprocess calls (pure)
+  debuglog.py           Opt-in file logger gated on FLATPAL_DEBUG=1
   constants.py          Tuning knobs in one place
 data/                   .desktop file, pre-sized PNG icons, screenshots
 install.sh              User-local installer
@@ -218,6 +234,14 @@ project.
 |                            | past month, fetched as 4 parallel `?page=N&per_page=250` calls. Cached for 24 h;    |
 |                            | partial fetches are returned to the UI but **not** persisted, so the next launch    |
 |                            | retries.                                                                            |
+| Available updates          | `flatpak remote-ls --updates --app` — one ~2.5 s background call at window startup  |
+|                            | feeds an in-memory `{app_id: {version, branch, origin, commit}}` dict that every    |
+|                            | tab consults for the "Update available" pill. Flat cost regardless of install       |
+|                            | count; lookup is a dict-get per row.                                                |
+| Release notes (newer)      | Flathub aggregated catalog's `<release>` entries — locally-installed metainfo only  |
+|                            | lists releases up to the deployed version, so the "What's new since 1.10.0" diff    |
+|                            | reads from the catalog instead. Window pre-loads the catalog at startup so detail   |
+|                            | pages of updateable apps see it.                                                    |
 
 ### Brand & licensing
 

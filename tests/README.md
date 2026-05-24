@@ -9,13 +9,14 @@ test side. Mocks are stdlib `unittest.mock`. Run before every
 # or:  python3 -m unittest discover -s tests -v
 ```
 
-252 tests covering size/date/locale parsing, the AppStream metainfo and
-Flathub catalog parsers, screenshot cache logic, popularity fetch &
-content-type/size validation, sandbox-permission summarisation, the
-running tracker (including sub-instance breakdown, freeze-position
-ordering and process-meta enrichment), image-gallery navigator, search
-filters and sort logic — plus regression tests for every bug we've found
-and fixed.
+281 tests covering size/date/locale parsing, the AppStream metainfo and
+Flathub catalog parsers, the `flatpak remote-ls --updates` parser and
+the release-since-installed diff helper, screenshot cache logic,
+popularity fetch & content-type/size validation, sandbox-permission
+summarisation, the running tracker (including sub-instance breakdown,
+freeze-position ordering and process-meta enrichment), image-gallery
+navigator, search filters and sort logic — plus regression tests for
+every bug we've found and fixed.
 
 ## Layout
 

@@ -15,12 +15,21 @@
     </p>
     <p>
       The Running tab samples CPU and memory for every Flatpak sandbox
-      live, with a per-instance breakdown for apps with more than one
-      window. The Installed tab is a searchable list of your apps with
-      summaries, versions, and update dates pulled from each app's own
-      AppStream metadata. The Explore tab is a browser for Flathub:
-      popular and trending shelves, full-text search, screenshots, and
-      sandbox-permission details on the per-app detail page.
+      live, with a per-sandbox breakdown when an app is running more
+      than one. The Installed tab is a searchable list of your apps
+      with summaries, versions, and install dates. The Explore tab is
+      a browser for Flathub: a Popular shelf, full-text search across
+      the catalog, an install-count chip on every row, and an
+      Installed marker for apps you already have.
+    </p>
+    <p>
+      Whenever a remote has a newer version of one of your apps, an
+      "Update available" pill surfaces on the matching row in every
+      tab; the detail page grows a tinted callout with the version
+      diff and inline release notes for everything between the
+      installed and available versions. Flatpal itself only surfaces
+      the update — handing it off to GNOME Software keeps the actual
+      install / uninstall flow somewhere the user already trusts.
     </p>
     <p>
       Flatpal does not replace flatpak, GNOME Software, or any other
