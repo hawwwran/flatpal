@@ -26,6 +26,7 @@ from .host import host_cmd
 from .metainfo import load_metainfo, system_lang
 from .permissions import parse_flatpak_metadata, summarize_permissions
 from .screenshot_viewer import ScreenshotViewer
+from .updates import releases_since
 
 
 def open_in_software(app_id: str) -> None:
@@ -170,7 +171,33 @@ class DetailPage(Adw.NavigationPage):
         AppStream XML, and sandbox permissions from `flatpak info -m`.
         """
         meta = load_metainfo(app["id"], lang=system_lang())
-        return cls(app=app, parent_window=parent_window, installed=True, meta=meta)
+
+        # The locally-installed metainfo only lists releases up to whatever
+        # version was current at install time — for the "what's new since
+        # installed" diff (and the Recent releases section) we want every
+        # release the remote has, including the ones newer than what's
+        # deployed locally. The Flathub aggregated catalog reflects the
+        # remote's current state, so prefer its release list when available.
+        #
+        # Race: the catalog is loaded in a background thread from
+        # FlatpalWindow startup (~1 s of local IO). A detail page opened
+        # within that window misses the override and falls back to the
+        # local metainfo's release list — the update box still surfaces
+        # the version diff, just without the "What's new since …" body.
+        explore = getattr(parent_window, "explore_page", None)
+        catalog_entry = explore.catalog_app(app["id"]) if explore else None
+        if catalog_entry and catalog_entry.get("releases"):
+            meta = dict(meta)
+            meta["releases"] = catalog_entry["releases"]
+
+        update_info = None
+        lookup = getattr(parent_window, "updates_lookup", None)
+        if callable(lookup):
+            update_info = lookup(app["id"])
+        return cls(
+            app=app, parent_window=parent_window, installed=True, meta=meta,
+            update_info=update_info,
+        )
 
     @classmethod
     def from_catalog(
@@ -195,7 +222,10 @@ class DetailPage(Adw.NavigationPage):
             "size_bytes": 0,
             "installed": None,
         }
-        return cls(app=app, parent_window=parent_window, installed=False, meta=entry)
+        return cls(
+            app=app, parent_window=parent_window, installed=False, meta=entry,
+            update_info=None,
+        )
 
     def __init__(
         self,
@@ -204,11 +234,13 @@ class DetailPage(Adw.NavigationPage):
         *,
         installed: bool,
         meta: dict,
+        update_info: Optional[dict] = None,
     ):
         super().__init__()
         self.app = app
         self.parent_window = parent_window
         self.installed = installed
+        self.update_info = update_info
         self.set_title(app["name"])
         self.set_tag(f"detail-{app['id']}")
 
@@ -232,6 +264,14 @@ class DetailPage(Adw.NavigationPage):
         body.set_margin_end(16)
 
         body.append(self._build_hero(app, meta))
+
+        # Update box sits directly under the hero so the "at a glance" diff
+        # (current → new version + release notes since installed) is the
+        # first thing the user reads on a detail page that has a pending
+        # update. Skipped when there's no available update or the app is
+        # being viewed from the catalog (Open in Software handles that flow).
+        if self.installed and self.update_info:
+            body.append(self._build_update_box(app, meta, self.update_info))
 
         if meta["screenshots"]:
             body.append(self._build_screenshots_row(app["id"], meta["screenshots"]))
@@ -364,6 +404,76 @@ class DetailPage(Adw.NavigationPage):
         row.append(open_btn)
         return row
 
+    def _build_update_box(
+        self, app: dict, meta: dict, update_info: dict,
+    ) -> Gtk.Widget:
+        """Terracotta-tinted callout: current vs new version + release notes.
+
+        Lives at the top of the detail body (just under the hero) so the
+        diff is the first thing the user sees on an updateable app. Release
+        notes are inlined (not expanders) so the "what's new since
+        installed" content is readable without an extra click.
+        """
+        new_v = update_info.get("version") or "?"
+        origin = update_info.get("origin") or "remote"
+        current = app.get("version") or "?"
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer.add_css_class("flatpal-update-card")
+
+        header = Gtk.Label(label="Update available")
+        header.set_xalign(0.0)
+        header.add_css_class("title-3")
+        outer.append(header)
+
+        diff = Gtk.Label(label=f"{current} → {new_v}   ·   on {origin}")
+        diff.set_xalign(0.0)
+        diff.add_css_class("heading")
+        outer.append(diff)
+
+        # "What's new since v0.1.0" — release notes slice from the metainfo
+        # for everything that landed after the installed version. Empty
+        # `releases_since` (no release tags, or installed == latest) leaves
+        # only the version-diff header above.
+        new_releases = releases_since(meta.get("releases") or [], current)
+        if new_releases:
+            since = Gtk.Label(label=f"What's new since {current}")
+            since.set_xalign(0.0)
+            since.add_css_class("dim-label")
+            since.add_css_class("caption-heading")
+            since.set_margin_top(8)
+            outer.append(since)
+
+            for rel in new_releases:
+                ver_label = Gtk.Label()
+                ver_label.set_markup(
+                    f"<b>{GLib.markup_escape_text(rel['version'] or '—')}</b>"
+                    + (
+                        f"  <span alpha='65%'>· {GLib.markup_escape_text(rel['date'])}</span>"
+                        if rel.get("date") else ""
+                    )
+                )
+                ver_label.set_xalign(0.0)
+                ver_label.set_margin_top(6)
+                outer.append(ver_label)
+
+                if rel.get("description_markup"):
+                    body = Gtk.Label(label=rel["description_markup"])
+                    body.set_wrap(True)
+                    body.set_xalign(0.0)
+                    body.add_css_class("body")
+                    outer.append(body)
+        elif current == "?":
+            # Installed version unknown (rare) → no diff possible. Tell the
+            # user explicitly so the empty box isn't mysterious.
+            note = Gtk.Label(label="Installed version unknown — open Software to view release notes.")
+            note.set_xalign(0.0)
+            note.add_css_class("dim-label")
+            note.set_wrap(True)
+            outer.append(note)
+
+        return outer
+
     def _build_description(self, markup: str) -> Gtk.Widget:
         # Wrap the description in a .card surface so it reads as a distinct
         # content block between the actions row and the metadata groups.
@@ -395,7 +505,22 @@ class DetailPage(Adw.NavigationPage):
             return r
 
         if self.installed:
-            group.add(row("Version", app.get("version", "")))
+            # Verbose version line surfaces both sides of an update at the
+            # canonical About location — useful even for users who scroll
+            # past the top-of-page update box. The row's title flips from
+            # the bare "Version" to "Version (update available)" so it's
+            # scannable in a list of plain rows.
+            if self.update_info:
+                new_v = self.update_info.get("version") or "?"
+                origin = self.update_info.get("origin") or "remote"
+                current = app.get("version") or "?"
+                ver_row = row(
+                    "Version (update available)",
+                    f"{current} → {new_v}  (on {origin})",
+                )
+            else:
+                ver_row = row("Version", app.get("version", ""))
+            group.add(ver_row)
             group.add(row("Size", app.get("size_str", "")))
             group.add(row("Installed", format_date(app.get("installed"))))
         else:

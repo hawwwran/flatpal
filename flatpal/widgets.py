@@ -21,7 +21,7 @@ module from a non-GTK context (or a unit test) doesn't side-effect.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
 import gi
 
@@ -81,6 +81,27 @@ _PILL_CSS = (
         padding: 1px 8px;
         border-radius: 9999px;
         font-weight: 500;
+    }
+
+    .flatpal-update-pill {
+        background-color: @flatpal_terracotta;
+        color: #FFFFFF;
+        padding: 1px 8px;
+        border-radius: 9999px;
+        font-weight: 500;
+    }
+
+    /* Detail-page "Update available" callout. Soft terracotta wash so the
+       box reads as the same family as the per-row Update pill above —
+       same hue, different weight. The 0.12 alpha on the background and
+       0.35 on the border are matched against Adwaita's `.card`
+       contrast budget so body text inside stays readable in both
+       light and dark themes without recolouring it. */
+    .flatpal-update-card {
+        background-color: alpha(@flatpal_terracotta, 0.12);
+        border: 1px solid alpha(@flatpal_terracotta, 0.35);
+        border-radius: 12px;
+        padding: 16px;
     }
 
     .flatpal-freeze-pill {
@@ -180,6 +201,45 @@ def make_installed_pill(label: str = "Installed") -> Gtk.Label:
     pill.add_css_class("flatpal-installed-pill")
     pill.set_valign(Gtk.Align.CENTER)
     return pill
+
+
+def make_update_pill(
+    label: str = "Update available", tooltip: Optional[str] = None,
+) -> Gtk.Label:
+    """Non-interactive Warm Terracotta pill flagging an available update.
+
+    Used by every tab + the detail page so a row hops into attention without
+    the user having to dig into Software. The caller passes a tooltip
+    describing the new version (see `update_tooltip()` for the shared
+    wording) because the pill itself stays short.
+    """
+    install_pill_css()
+    pill = Gtk.Label(label=label)
+    pill.add_css_class("caption")
+    pill.add_css_class("flatpal-update-pill")
+    pill.set_valign(Gtk.Align.CENTER)
+    if tooltip:
+        pill.set_tooltip_text(tooltip)
+    return pill
+
+
+def update_tooltip(
+    installed_version: Optional[str], update_info: dict,
+) -> str:
+    """Shared tooltip wording for every Update-pill caller.
+
+    Keeping the format in one place avoids the Installed / Explore /
+    Running tabs drifting into different phrasings. When the caller can
+    supply the installed version (Installed + Running tabs) the full
+    "{current} → {new} (on {origin})" form is used; the Explore tab,
+    which only sees catalog entries, gets the short form without the
+    "{current} →" prefix rather than a noisy "?" placeholder.
+    """
+    new_v = update_info.get("version") or "?"
+    origin = update_info.get("origin") or "remote"
+    if installed_version:
+        return f"Update available: {installed_version} → {new_v} (on {origin})"
+    return f"Update available → {new_v} (on {origin})"
 
 
 def make_freeze_pill(

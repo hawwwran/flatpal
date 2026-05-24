@@ -20,7 +20,9 @@ from .running import (
     order_with_freeze,
     sort_running,
 )
-from .widgets import make_freeze_pill, make_sort_pill
+from .widgets import (
+    make_freeze_pill, make_sort_pill, make_update_pill, update_tooltip,
+)
 
 
 # Line the status row + dropdown up with the boxed-list rows below.
@@ -166,7 +168,7 @@ class RunningRow(Adw.ActionRow):
 
     Mirrors the suffix layout of `RunningExpanderRow` so single- and
     multi-sandbox rows align visually:
-      `[stats] [detail arrow] [bullet]`
+      `[update] [stats] [detail arrow] [bullet]`
     where the bullet stands in for the expander chevron that ExpanderRow
     draws for multi-sandbox apps. The bullet's tooltip explains the slot's
     meaning ("single flatpak sandbox running"). Note that Adw.ActionRow's
@@ -182,6 +184,7 @@ class RunningRow(Adw.ActionRow):
         row: dict,
         installed_lookup: Callable[[str], Optional[dict]],
         on_open_detail: Callable[[str], None],
+        update_info: Optional[dict] = None,
     ):
         super().__init__()
         self.app_id = row["id"]
@@ -189,6 +192,14 @@ class RunningRow(Adw.ActionRow):
         self.set_activatable(True)
 
         self.add_prefix(_build_app_icon(self.get_display(), row["id"]))
+
+        if update_info:
+            installed = installed_lookup(row["id"]) if installed_lookup else None
+            self.add_suffix(make_update_pill(
+                tooltip=update_tooltip(
+                    (installed or {}).get("version"), update_info,
+                ),
+            ))
 
         stats_box, self._cpu_label, self._mem_label = _build_stats_box(
             row["cpu_percent"], row["memory_bytes"],
@@ -241,6 +252,7 @@ class RunningExpanderRow(Adw.ExpanderRow):
         row: dict,
         installed_lookup: Callable[[str], Optional[dict]],
         on_open_detail: Callable[[str], None],
+        update_info: Optional[dict] = None,
     ):
         super().__init__()
         self.app_id = row["id"]
@@ -267,6 +279,16 @@ class RunningExpanderRow(Adw.ExpanderRow):
 
         self.add_suffix(open_btn)
         self.add_suffix(stats_box)
+        # Adw.ExpanderRow.add_suffix *prepends*, so this Update pill ends
+        # up leftmost in the suffix area — same visual order as RunningRow:
+        # [update] [stats] [arrow] [chevron].
+        if update_info:
+            installed = installed_lookup(row["id"]) if installed_lookup else None
+            self.add_suffix(make_update_pill(
+                tooltip=update_tooltip(
+                    (installed or {}).get("version"), update_info,
+                ),
+            ))
 
         self.update(row)
 
@@ -312,10 +334,15 @@ def make_running_row(
     row: dict,
     installed_lookup: Callable[[str], Optional[dict]],
     on_open_detail: Callable[[str], None],
+    update_info: Optional[dict] = None,
 ):
     if row.get("instances", 1) > 1:
-        return RunningExpanderRow(row, installed_lookup, on_open_detail)
-    return RunningRow(row, installed_lookup, on_open_detail)
+        return RunningExpanderRow(
+            row, installed_lookup, on_open_detail, update_info=update_info,
+        )
+    return RunningRow(
+        row, installed_lookup, on_open_detail, update_info=update_info,
+    )
 
 
 def _expected_row_type(row: dict):
@@ -328,11 +355,13 @@ class RunningPage(Gtk.Box):
         on_row_activated: Callable[[dict], None],
         installed_lookup: Callable[[str], Optional[dict]],
         on_interval_changed: Optional[Callable[[int], None]] = None,
+        updates_lookup: Optional[Callable[[str], Optional[dict]]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._on_row_activated = on_row_activated
         self._installed_lookup = installed_lookup
         self._on_interval_changed = on_interval_changed
+        self._updates_lookup = updates_lookup or (lambda _id: None)
         self._tracker: Optional[RunningTracker] = None
         self._timeout_id: Optional[int] = None
         self._sort_by = "cpu"  # current sort key; persisted via set_sort
@@ -511,6 +540,23 @@ class RunningPage(Gtk.Box):
             self._tracker = RunningTracker()
         self._refresh()
 
+    def apply_updates_change(self) -> None:
+        """Rebuild visible rows so the per-app Update pill picks up the
+        latest `updates_lookup` result.
+
+        Called once after the background `flatpak remote-ls --updates`
+        worker lands. Clears `_row_cache` so the row-diff path in
+        `_render_rows` falls into the cold-path branch that reconstructs
+        each row via `make_running_row` (which re-reads the lookup), then
+        rerenders against the cached `_last_rows` so no extra `flatpak
+        ps` sampling happens just to add a badge.
+        """
+        for widget in list(self._iter_row_widgets()):
+            self.listbox.remove(widget)
+        self._row_cache.clear()
+        if self._last_rows:
+            self._render_rows(self._last_rows)
+
     def set_sort(self, key: str) -> None:
         """User-driven sort change. Re-renders from the cached sample."""
         if key == self._sort_by:
@@ -656,6 +702,7 @@ class RunningPage(Gtk.Box):
                         new_data_by_id[app_id],
                         self._installed_lookup,
                         self._on_row_activated,
+                        update_info=self._updates_lookup(app_id),
                     )
                     if isinstance(existing, Adw.ExpanderRow):
                         existing.connect(

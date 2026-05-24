@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 
 import gi
 
@@ -18,6 +19,7 @@ from .detail import DetailPage
 from .explore_page import ExplorePage
 from .installed_page import InstalledPage
 from .running_page import RunningPage
+from .updates import fetch_updates
 
 
 APP_ID = "io.github.hawwwran.flatpal"
@@ -28,6 +30,14 @@ class FlatpalWindow(Adw.ApplicationWindow):
         super().__init__(application=app)
         self.set_title("Flatpal")
         self.set_default_size(900, 720)
+
+        # Per-app-id update info from `flatpak remote-ls --updates`. Populated
+        # by a single background worker shortly after startup (~2.5 s), then
+        # frozen for the rest of the session. Empty dict here means "lookup
+        # returns None for every app id" — pages render no update badge
+        # until the worker lands.
+        self._updates: dict = {}
+        self._updates_loaded = False
 
         # GTK's default icon-theme search path inside the Flatpak sandbox
         # is /app/share/icons + the runtime — it doesn't include the host's
@@ -63,8 +73,58 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # Always load installed apps first so Explore can see what's installed.
         self.installed_page.reload()
 
+        # Pre-load the Flathub catalog (~1 s of local IO) so detail pages of
+        # installed apps can read release notes for versions newer than the
+        # one deployed locally. The locally-installed metainfo only knows
+        # about its own past releases — the catalog reflects the remote's
+        # current state, which is exactly the diff we want to show in the
+        # "What's new since v1.10.0" block of the update box.
+        self.explore_page.ensure_catalog_loaded()
+
+        # Background-discover available updates. Single ~2.5 s call that
+        # feeds every tab's update-badge lookup; finishing late just means
+        # the badges fade in once the worker lands — first paint isn't
+        # blocked. See updates.py for why the cost is flat regardless of
+        # how many apps are installed.
+        self._start_updates_fetch()
+
         if open_app_id:
             self._open_detail_by_id(open_app_id)
+
+    def _start_updates_fetch(self) -> None:
+        def worker():
+            try:
+                data = fetch_updates()
+            except Exception:
+                data = {}
+
+            def finish():
+                self._updates = data
+                self._updates_loaded = True
+                self._on_updates_loaded()
+                return False
+
+            GLib.idle_add(finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_updates_loaded(self) -> None:
+        # Re-render every tab so the badges that depend on the lookup pick
+        # up the newly-populated dict. Each page exposes a state-only
+        # rerender entry point so we don't pay for another flatpak list /
+        # ps sample just to add a badge.
+        if not self._updates:
+            # Nothing to show — no need to flicker the Running rows or
+            # rebuild any AppRows. The lookup will keep returning None on
+            # every call and the pages already paint without badges.
+            return
+        self.installed_page.refresh()
+        self.explore_page.refresh()
+        self.running_page.apply_updates_change()
+
+    def updates_lookup(self, app_id: str):
+        """Return the update record for `app_id` (or None)."""
+        return self._updates.get(app_id) if self._updates_loaded else None
 
     def _apply_restored_settings(self):
         s = self.settings
@@ -178,6 +238,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
         self.installed_page = InstalledPage(
             on_row_activated=self._open_detail_for,
             on_render=self._on_page_render,
+            updates_lookup=self.updates_lookup,
         )
         self.explore_page = ExplorePage(
             on_row_activated=self._open_detail_for_explore,
@@ -186,6 +247,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
             on_show_popular_changed=lambda v: self._save_setting(
                 "show_popular", bool(v)
             ),
+            updates_lookup=self.updates_lookup,
         )
         self.running_page = RunningPage(
             on_row_activated=self._open_detail_by_id,
@@ -193,6 +255,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
             on_interval_changed=lambda secs: self._save_setting(
                 "running_refresh_seconds", int(secs)
             ),
+            updates_lookup=self.updates_lookup,
         )
 
         # Per-tab sort pills are static labels, but clicking one pops the

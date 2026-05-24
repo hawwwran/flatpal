@@ -22,6 +22,7 @@ python.install_sources(
     'screenshot_viewer.py',
     'search.py',
     'settings.py',
+    'updates.py',
     'widgets.py',
   ],
   subdir: 'flatpal',

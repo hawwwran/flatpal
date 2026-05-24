@@ -13,7 +13,7 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from .core import fetch_apps, format_date, sort_apps
 from .metainfo import load_metainfo, system_lang
 from .search import filter_installed
-from .widgets import make_sort_pill
+from .widgets import make_sort_pill, make_update_pill, update_tooltip
 
 
 _SORT_LABELS = {"name": "name", "date": "install date", "size": "size"}
@@ -66,7 +66,7 @@ def enrich_with_metainfo(
 
 
 class AppRow(Adw.ActionRow):
-    def __init__(self, app: dict):
+    def __init__(self, app: dict, update_info: Optional[dict] = None):
         super().__init__()
         self.app = app
         self.set_title(GLib.markup_escape_text(app["name"]))
@@ -83,6 +83,11 @@ class AppRow(Adw.ActionRow):
         if not Gtk.IconTheme.get_for_display(self.get_display()).has_icon(app["id"]):
             icon.set_from_icon_name("application-x-executable")
         self.add_prefix(icon)
+
+        if update_info:
+            self.add_suffix(make_update_pill(
+                tooltip=update_tooltip(app.get("version"), update_info),
+            ))
 
         meta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         meta.set_valign(Gtk.Align.CENTER)
@@ -104,7 +109,10 @@ class AppRow(Adw.ActionRow):
 
 
 class InstalledPage(Gtk.Box):
-    def __init__(self, on_row_activated, on_render=None):
+    def __init__(
+        self, on_row_activated, on_render=None,
+        updates_lookup: Optional[Callable[[str], Optional[dict]]] = None,
+    ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.apps: list = []
         self.sort_key = "date"
@@ -112,6 +120,7 @@ class InstalledPage(Gtk.Box):
         self.query = ""
         self._on_row_activated = on_row_activated
         self._on_render = on_render
+        self._updates_lookup = updates_lookup or (lambda _id: None)
 
         self.search_entry = Gtk.SearchEntry()
         self.search_entry.set_placeholder_text(
@@ -188,6 +197,15 @@ class InstalledPage(Gtk.Box):
         self.apps = apps
         self._render()
 
+    def refresh(self) -> None:
+        """Re-render the list against current state without re-fetching apps.
+
+        Cheap entry point invoked when the per-app update lookup changes
+        (the background `flatpak remote-ls --updates` worker lands) so the
+        Update badges fade in without paying for another `flatpak list`.
+        """
+        self._render()
+
     def installed_ids(self) -> set:
         return {a["id"] for a in self.apps}
 
@@ -214,7 +232,7 @@ class InstalledPage(Gtk.Box):
         filtered = filter_installed(self.apps, self.query)
         ordered = sort_apps(filtered, self.sort_key, self.reverse)
         for a in ordered:
-            self.listbox.append(AppRow(a))
+            self.listbox.append(AppRow(a, update_info=self._updates_lookup(a["id"])))
 
         total = len(self.apps)
         visible = len(ordered)

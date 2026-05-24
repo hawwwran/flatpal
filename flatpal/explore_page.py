@@ -17,7 +17,9 @@ from .constants import INITIAL_LIMIT, LOAD_MORE_INCREMENT, MAX_LIMIT
 from .metainfo import system_lang
 from .popularity import format_install_count, load_popular, popularity_index
 from .search import popular_shelf, search_catalog
-from .widgets import make_installed_pill, make_sort_pill
+from .widgets import (
+    make_installed_pill, make_sort_pill, make_update_pill, update_tooltip,
+)
 
 
 # Lock search bar, status row and listboxes to the same width so the input
@@ -26,7 +28,7 @@ LIST_MAX_WIDTH = 900
 
 
 class ExploreRow(Adw.ActionRow):
-    def __init__(self, entry: dict):
+    def __init__(self, entry: dict, update_info: Optional[dict] = None):
         super().__init__()
         self.entry = entry
         self.set_title(GLib.markup_escape_text(entry["name"] or entry["id"]))
@@ -45,10 +47,18 @@ class ExploreRow(Adw.ActionRow):
         icon = self._build_icon(entry)
         self.add_prefix(icon)
 
-        # Suffix order matters: add_suffix appends left-to-right, so the
-        # Installed pill goes on first (sits to the left) and the install-
-        # count chip goes on last so it always anchors the right edge of
-        # the row.
+        # Suffix order matters: add_suffix appends left-to-right.
+        #   [Update]  → leftmost when present; the most actionable signal
+        #   [Installed] → status marker, follows Update
+        #   [123k ⇩/mo] → install count, anchors the right edge
+        if update_info:
+            # Catalog entries don't carry the user's installed version, so
+            # the tooltip degrades to the short form ("Update available →
+            # {new}") — see widgets.update_tooltip.
+            self.add_suffix(make_update_pill(
+                tooltip=update_tooltip(None, update_info),
+            ))
+
         if entry.get("installed"):
             self.add_suffix(make_installed_pill())
 
@@ -82,12 +92,14 @@ class ExplorePage(Gtk.Box):
         installed_ids_getter: Callable[[], Set[str]],
         on_render: Optional[Callable[[], None]] = None,
         on_show_popular_changed: Optional[Callable[[bool], None]] = None,
+        updates_lookup: Optional[Callable[[str], Optional[dict]]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._on_row_activated = on_row_activated
         self._installed_ids_getter = installed_ids_getter
         self._on_render = on_render
         self._on_show_popular_changed = on_show_popular_changed
+        self._updates_lookup = updates_lookup or (lambda _id: None)
         # When True (default): fetch Flathub popularity and show the popular
         # shelf in the empty-search state. When False: those network calls are
         # skipped. Local AppStream catalog search keeps working either way.
@@ -323,6 +335,18 @@ class ExplorePage(Gtk.Box):
         # and calls refresh() itself.
         self.refresh()
 
+    def ensure_catalog_loaded(self) -> None:
+        """Kick off ONLY the catalog parse (no popularity fetch).
+
+        Used by the window at startup so detail pages of installed apps can
+        consult the catalog's release list — that list comes from the
+        remote and includes versions newer than what's deployed locally,
+        which is exactly the "what's new since installed" diff the update
+        box renders. Catalog parse is ~1 s of local IO, cheap to do eagerly.
+        Idempotent thanks to `_ensure_catalog`'s short-circuits.
+        """
+        self._ensure_catalog()
+
     def set_show_popular(self, value: bool) -> None:
         """Toggle the empty-state popular shelf.
 
@@ -502,7 +526,9 @@ class ExplorePage(Gtk.Box):
 
         self._clear(self.listbox)
         for entry in visible:
-            self.listbox.append(ExploreRow(entry))
+            self.listbox.append(ExploreRow(
+                entry, update_info=self._updates_lookup(entry["id"]),
+            ))
 
         if all_results:
             self.stack.set_visible_child_name("results")
@@ -558,7 +584,9 @@ class ExplorePage(Gtk.Box):
 
             self._clear(self.popular_listbox)
             for entry in visible:
-                self.popular_listbox.append(ExploreRow(entry))
+                self.popular_listbox.append(ExploreRow(
+                    entry, update_info=self._updates_lookup(entry["id"]),
+                ))
 
             self.stack.set_visible_child_name("popular")
             base = (
