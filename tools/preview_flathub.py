@@ -788,174 +788,96 @@ footer code {
 """
 
 
-def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
-           license_info: dict,
-           validations: list[tuple[str, str, int]]) -> str:
-    brand_light = info["branding"][0]["value"] if info["branding"] else "#e6e6e6"
-    brand_dark = info["branding"][1]["value"] if len(info["branding"]) > 1 else "#1c1c1c"
-    css = CSS % {"brand_light": brand_light, "brand_dark": brand_dark}
+def _render_banner_row(name: str, text: str, code: int) -> str:
+    """One <div class="banner ..."> for a single lint validation result."""
+    overall, known, unknown = _classify_validation(name, text or "", code)
 
-    # Each banner: classify findings (resolves-at-tag / justify-in-pr /
-    # unknown), summarise visibly, keep the raw lint output behind a <details>
-    # so verbatim text is one click away when debugging.
-    banner_rows = []
-    for name, text, code in validations:
-        overall, known, unknown = _classify_validation(name, text or "", code)
+    if overall == "ok":
+        cls = "ok"
+    elif overall == "expected":
+        cls = "warn"
+    else:
+        cls = "fail"
 
-        if overall == "ok":
-            cls = "ok"
-        elif overall == "expected":
-            cls = "warn"
-        else:
-            cls = "fail"
+    if not known and not unknown:
+        summary_html = '<div class="lint-summary lint-summary-ok">Clean.</div>'
+    else:
+        n_resolves = sum(1 for i in known if i["kind"] == "resolves-at-tag")
+        n_justify = sum(1 for i in known if i["kind"] == "justify-in-pr")
+        n_unknown = len(unknown)
 
-        if not known and not unknown:
-            summary_html = (
-                '<div class="lint-summary lint-summary-ok">Clean.</div>'
+        parts = []
+        if n_resolves:
+            parts.append(
+                f'<span class="lint-pill resolves-at-tag">'
+                f'{n_resolves} resolves at tag</span>'
             )
-        else:
-            n_resolves = sum(1 for i in known if i["kind"] == "resolves-at-tag")
-            n_justify = sum(1 for i in known if i["kind"] == "justify-in-pr")
-            n_unknown = len(unknown)
-
-            parts = []
-            if n_resolves:
-                parts.append(
-                    f'<span class="lint-pill resolves-at-tag">'
-                    f'{n_resolves} resolves at tag</span>'
-                )
-            if n_justify:
-                parts.append(
-                    f'<span class="lint-pill justify-in-pr">'
-                    f'{n_justify} justify in PR</span>'
-                )
-            if n_unknown:
-                parts.append(
-                    f'<span class="lint-pill attention">'
-                    f'{n_unknown} needs attention</span>'
-                )
-
-            issue_rows = []
-            for issue in known:
-                issue_rows.append(
-                    f'<li class="lint-issue {issue["kind"]}">'
-                    f'<code class="lint-id">{escape(issue["id"])}</code>'
-                    f'<span class="lint-expl">{escape(issue["explanation"])}</span>'
-                    f'</li>'
-                )
-            for ident in unknown:
-                issue_rows.append(
-                    f'<li class="lint-issue attention">'
-                    f'<code class="lint-id">{escape(ident)}</code>'
-                    f'<span class="lint-expl">Unknown lint; investigate '
-                    f'and add to LINT_CLASSIFICATIONS in tools/preview_flathub.py '
-                    f'so future runs categorise it.</span>'
-                    f'</li>'
-                )
-
-            summary_html = (
-                f'<div class="lint-summary">{" ".join(parts)}</div>'
-                f'<ul class="lint-issues">{"".join(issue_rows)}</ul>'
+        if n_justify:
+            parts.append(
+                f'<span class="lint-pill justify-in-pr">'
+                f'{n_justify} justify in PR</span>'
+            )
+        if n_unknown:
+            parts.append(
+                f'<span class="lint-pill attention">'
+                f'{n_unknown} needs attention</span>'
             )
 
-        # Raw output is folded into a <details> so the banner stays scannable.
-        raw_html = ""
-        if text and text.strip():
-            raw_html = (
-                f'<details class="lint-raw"><summary>raw lint output</summary>'
-                f'<pre>{escape(text)}</pre></details>'
+        issue_rows = []
+        for issue in known:
+            issue_rows.append(
+                f'<li class="lint-issue {issue["kind"]}">'
+                f'<code class="lint-id">{escape(issue["id"])}</code>'
+                f'<span class="lint-expl">{escape(issue["explanation"])}</span>'
+                f'</li>'
+            )
+        for ident in unknown:
+            issue_rows.append(
+                f'<li class="lint-issue attention">'
+                f'<code class="lint-id">{escape(ident)}</code>'
+                f'<span class="lint-expl">Unknown lint; investigate '
+                f'and add to LINT_CLASSIFICATIONS in tools/preview_flathub.py '
+                f'so future runs categorise it.</span>'
+                f'</li>'
             )
 
-        banner_rows.append(
-            f'<div class="banner {cls}">'
-            f'<strong>{escape(name)}</strong>'
-            f'{summary_html}'
-            f'{raw_html}'
-            f'</div>'
+        summary_html = (
+            f'<div class="lint-summary">{" ".join(parts)}</div>'
+            f'<ul class="lint-issues">{"".join(issue_rows)}</ul>'
         )
-    banners_html = "\n".join(banner_rows)
 
-    # Description
-    desc_html = render_rich(info["description"])
-
-    # Screenshots
-    shot_cards = []
-    for s in info["screenshots"]:
-        local = remote_to_local(s["url"])
-        badge = ' <span class="badge">default</span>' if s["is_default"] else ""
-        shot_cards.append(
-            f'<figure class="screenshot">'
-            f'<img src="{escape(local)}" alt="{escape(s["caption"])}">'
-            f'<figcaption>{escape(s["caption"])}{badge}'
-            f'<small class="remote-url">{escape(s["url"])}</small>'
-            f'</figcaption>'
-            f'</figure>'
+    raw_html = ""
+    if text and text.strip():
+        raw_html = (
+            f'<details class="lint-raw"><summary>raw lint output</summary>'
+            f'<pre>{escape(text)}</pre></details>'
         )
-    shots_html = "\n".join(shot_cards)
 
-    # URLs
-    url_cards = "\n".join(
-        f'<a href="{escape(u["href"])}" target="_blank" rel="noopener">'
-        f'<span class="label">{escape((u["type"] or "").replace("_", " "))}</span>'
-        f'<span class="url">{escape(u["href"])}</span></a>'
-        for u in info["urls"]
+    return (
+        f'<div class="banner {cls}">'
+        f'<strong>{escape(name)}</strong>'
+        f'{summary_html}'
+        f'{raw_html}'
+        f'</div>'
     )
 
-    # Tags
-    cat_tags = "".join(f'<span class="tag">{escape(c)}</span>' for c in info["categories"])
-    kw_tags = "".join(f'<span class="tag">{escape(k)}</span>' for k in info["keywords"])
 
-    # Branding (AppStream-spec: only `type="primary"` with optional
-    # light/dark scheme_preference, so max two entries here).
-    branding_html = "\n".join(
-        f'<div class="swatch-info">'
-        f'<span class="swatch" style="background:{escape(c["value"])}"></span>'
-        f'<div><div class="scheme">{escape(c["scheme_preference"] or "—")} scheme</div>'
-        f'<div class="hex">{escape(c["value"])}</div></div></div>'
-        for c in info["branding"]
-    )
-
-    # Full Flatpal theme palette: read from flatpal/palette.py so this
-    # card stays in sync with the CSS provider that ships in the app.
-    # AppStream's <branding> only carries the primary light/dark pair;
-    # this block surfaces the rest (Mint Teal, Freeze Blue, …) that the
-    # running app actually paints with.
-    palette_html = "\n".join(
-        f'<div class="swatch-info">'
-        f'<span class="swatch" style="background:{escape(value)}"></span>'
-        f'<div><div class="scheme">{escape(name)}</div>'
-        f'<div class="hex">{escape(value)}</div>'
-        f'<div class="palette-role">{escape(role)}</div></div></div>'
-        for name, value, role in PALETTE_ENTRIES
-    )
-
-    # Releases
-    release_blocks = []
-    for r in info["releases"]:
-        body = render_rich(r["description"])
-        release_blocks.append(
-            f'<div class="release">'
-            f'<h3>{escape(r["version"] or "")} '
-            f'<span class="date">— {escape(r["date"] or "")}</span></h3>'
-            f'{body}'
-            f'</div>'
-        )
-    releases_html = "\n".join(release_blocks)
-
-    # Developer
+def _render_hero(title: str, info: dict) -> str:
     dev = info["developer"]
     dev_name = escape(dev.get("name") or "—")
     dev_id = escape(dev.get("id") or "")
+    return (
+        f'<section class="card hero">'
+        f'<img class="icon" src="icon.png" alt="{title}">'
+        f'<div><h1>{title}</h1>'
+        f'<p class="summary">{escape(info["summary"] or "")}</p>'
+        f'<div class="developer">by <strong>{dev_name}</strong>'
+        f' <span style="color:var(--muted)">({dev_id})</span></div>'
+        f"</div></section>"
+    )
 
-    # Content rating
-    cr = info["content_rating"]
-    cr_type = cr.get("type") or "—"
-    if cr.get("attributes"):
-        cr_body = ", ".join(f"{a['id']}: {a['value']}" for a in cr["attributes"])
-    else:
-        cr_body = "no explicit attributes (implicit: no objectionable content)"
 
-    # Metadata grid
+def _render_overview(info: dict) -> str:
     meta_rows = [
         ("App ID", info["id"]),
         ("Summary length", f'{len(info["summary"] or "")} chars'),
@@ -971,132 +893,66 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         f'<div class="value">{escape(value or "—")}</div></div>'
         for label, value in meta_rows
     )
-
-    title = escape(info["name"] or "metainfo preview")
-
-    # Desktop entry card: every key shown verbatim, with Categories /
-    # Keywords lifted out as tag pills for parity with the metainfo card.
-    if desktop:
-        desktop_categories = [c for c in desktop.get("Categories", "").split(";") if c]
-        desktop_keywords = [k for k in desktop.get("Keywords", "").split(";") if k]
-        desktop_rows = "\n".join(
-            f'<tr><th>{escape(k)}</th><td>{escape(v)}</td></tr>'
-            for k, v in desktop.items()
-        )
-        desktop_cats = "".join(
-            f'<span class="tag">{escape(c)}</span>' for c in desktop_categories
-        )
-        desktop_keys = "".join(
-            f'<span class="tag">{escape(k)}</span>' for k in desktop_keywords
-        )
-        desktop_card = (
-            f'<section class="card"><h2>Desktop entry</h2>'
-            f'<table class="kv">{desktop_rows}</table>'
-            + (f'<h2 class="section-sub">Categories</h2>'
-               f'<div class="tags">{desktop_cats}</div>' if desktop_cats else "")
-            + (f'<h2 class="section-sub">Keywords</h2>'
-               f'<div class="tags">{desktop_keys}</div>' if desktop_keys else "")
-            + f'</section>'
-        )
-    else:
-        desktop_card = ""
-
-    # Flatpak manifest card: top-level meta, finish-args (each with a small
-    # explanation from the standard set), and modules with their source pinning.
-    if manifest:
-        finish_args = manifest.get("finish-args", []) or []
-        finish_items = "".join(
-            f'<li><code>{escape(str(a))}</code> '
-            f'<span class="note">{escape(_finish_note(a))}</span></li>'
-            for a in finish_args
-        )
-        modules = manifest.get("modules", []) or []
-        manifest_card = (
-            f'<section class="card"><h2>Flatpak manifest</h2>'
-            f'<table class="kv">{_render_manifest_top(manifest)}</table>'
-            f'<h2 class="section-sub">finish-args ({len(finish_args)})</h2>'
-            f'<ul class="finish-args">{finish_items}</ul>'
-            f'<h2 class="section-sub">Modules ({len(modules)})</h2>'
-            f'{_render_manifest_modules(modules)}</section>'
-        )
-    elif yaml is None:
-        manifest_card = (
-            '<section class="card"><h2>Flatpak manifest</h2>'
-            '<p style="color:var(--muted);margin:0">'
-            'PyYAML is not installed; install <code>python3-yaml</code> '
-            '(Debian/Ubuntu) or <code>pip install pyyaml</code> to render '
-            'this card.</p></section>'
-        )
-    else:
-        manifest_card = ""
-
-    # Dev-manifest card: same shape as the canonical manifest but tighter,
-    # because the only thing that differs is the source override (type: dir
-    # instead of type: git). Surfaced so the maintainer can sanity-check the
-    # local-build setup at a glance.
-    if dev_manifest:
-        dev_modules = dev_manifest.get("modules", []) or []
-        dev_manifest_card = (
-            f'<section class="card"><h2>Dev manifest '
-            f'<span style="font-size:0.7em;color:var(--muted);font-weight:400">'
-            f'(local-build override, not seen by Flathub)</span></h2>'
-            f'<p style="margin:0 0 12px;color:var(--muted);font-size:0.9rem">'
-            f'Used by <code>release-flatpal.sh</code> Mode 1 and §9 lint runs. '
-            f'Same finish-args as the canonical manifest above; only the source '
-            f'differs: <code>type: dir, path: .</code> so flatpak-builder copies '
-            f'the working tree instead of cloning a tag.</p>'
-            f'<table class="kv">{_render_manifest_top(dev_manifest)}</table>'
-            f'<h2 class="section-sub">Modules ({len(dev_modules)})</h2>'
-            f'{_render_manifest_modules(dev_modules)}</section>'
-        )
-    else:
-        dev_manifest_card = ""
-
-    # LICENSE card: title, line count, file size, head excerpt.
-    if license_info:
-        head_html = "".join(
-            f'<div>{escape(line)}</div>' for line in license_info.get("head", [])
-        )
-        license_card = (
-            f'<section class="card"><h2>License</h2>'
-            f'<div class="metadata-grid">'
-            f'<div class="item"><div class="label">SPDX</div>'
-            f'<div class="value">{escape(info.get("project_license") or "—")}</div></div>'
-            f'<div class="item"><div class="label">Title</div>'
-            f'<div class="value">{escape(license_info["title"])}</div></div>'
-            f'<div class="item"><div class="label">Lines</div>'
-            f'<div class="value">{license_info["lines"]}</div></div>'
-            f'<div class="item"><div class="label">Size</div>'
-            f'<div class="value">{license_info["bytes"]:,} bytes</div></div>'
-            f'<div class="item"><div class="label">Path</div>'
-            f'<div class="value">{escape(license_info["path"])}</div></div>'
-            f'</div>'
-            f'<div class="license-head">{head_html}</div></section>'
-        )
-    else:
-        license_card = ""
-
     return (
-        "<!DOCTYPE html>\n"
-        f'<html lang="en"><head><meta charset="utf-8">'
-        f"<title>{title} | Flathub release preview</title>"
-        f"<style>{css}</style></head><body>"
-        f'<div class="container">'
-        f'<div class="banners">{banners_html}</div>'
-        f'<section class="card hero">'
-        f'<img class="icon" src="icon.png" alt="{title}">'
-        f'<div><h1>{title}</h1>'
-        f'<p class="summary">{escape(info["summary"] or "")}</p>'
-        f'<div class="developer">by <strong>{dev_name}</strong>'
-        f' <span style="color:var(--muted)">({dev_id})</span></div>'
-        f"</div></section>"
         f'<section class="card"><h2>Overview</h2>'
         f'<div class="metadata-grid">{meta_grid}</div></section>'
+    )
+
+
+def _render_screenshots(info: dict) -> str:
+    shot_cards = []
+    for s in info["screenshots"]:
+        local = remote_to_local(s["url"])
+        badge = ' <span class="badge">default</span>' if s["is_default"] else ""
+        shot_cards.append(
+            f'<figure class="screenshot">'
+            f'<img src="{escape(local)}" alt="{escape(s["caption"])}">'
+            f'<figcaption>{escape(s["caption"])}{badge}'
+            f'<small class="remote-url">{escape(s["url"])}</small>'
+            f'</figcaption>'
+            f'</figure>'
+        )
+    shots_html = "\n".join(shot_cards)
+    return (
         f'<section class="card"><h2>Screenshots ({len(info["screenshots"])})</h2>'
         f'<div class="screenshots">{shots_html}</div></section>'
-        f'<section class="card description"><h2>Description</h2>{desc_html}</section>'
+    )
+
+
+def _render_description(info: dict) -> str:
+    return (
+        f'<section class="card description"><h2>Description</h2>'
+        f'{render_rich(info["description"])}</section>'
+    )
+
+
+def _render_links(info: dict) -> str:
+    url_cards = "\n".join(
+        f'<a href="{escape(u["href"])}" target="_blank" rel="noopener">'
+        f'<span class="label">{escape((u["type"] or "").replace("_", " "))}</span>'
+        f'<span class="url">{escape(u["href"])}</span></a>'
+        for u in info["urls"]
+    )
+    return (
         f'<section class="card"><h2>Links</h2>'
         f'<div class="links">{url_cards}</div></section>'
+    )
+
+
+def _render_tags(info: dict) -> str:
+    cat_tags = "".join(
+        f'<span class="tag">{escape(c)}</span>' for c in info["categories"]
+    )
+    kw_tags = "".join(
+        f'<span class="tag">{escape(k)}</span>' for k in info["keywords"]
+    )
+    cr = info["content_rating"]
+    cr_type = cr.get("type") or "—"
+    if cr.get("attributes"):
+        cr_body = ", ".join(f"{a['id']}: {a['value']}" for a in cr["attributes"])
+    else:
+        cr_body = "no explicit attributes (implicit: no objectionable content)"
+    return (
         f'<section class="card"><h2>Categories</h2>'
         f'<div class="tags">{cat_tags}</div>'
         f'<h2 class="section-sub">Keywords</h2>'
@@ -1105,6 +961,33 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         f'<p style="margin:0;color:var(--muted)"><strong>{escape(cr_type)}</strong>'
         f' — {escape(cr_body)}</p>'
         f"</section>"
+    )
+
+
+def _render_brand_colors(info: dict) -> str:
+    # AppStream-spec <branding>: only `type="primary"` with optional
+    # light/dark scheme_preference, so max two entries here.
+    branding_html = "\n".join(
+        f'<div class="swatch-info">'
+        f'<span class="swatch" style="background:{escape(c["value"])}"></span>'
+        f'<div><div class="scheme">{escape(c["scheme_preference"] or "—")} scheme</div>'
+        f'<div class="hex">{escape(c["value"])}</div></div></div>'
+        for c in info["branding"]
+    )
+    # Full Flatpal theme palette: read from flatpal/palette.py so this
+    # card stays in sync with the CSS provider that ships in the app.
+    # AppStream's <branding> only carries the primary light/dark pair;
+    # this block surfaces the rest (Mint Teal, Freeze Blue, …) that the
+    # running app actually paints with.
+    palette_html = "\n".join(
+        f'<div class="swatch-info">'
+        f'<span class="swatch" style="background:{escape(value)}"></span>'
+        f'<div><div class="scheme">{escape(name)}</div>'
+        f'<div class="hex">{escape(value)}</div>'
+        f'<div class="palette-role">{escape(role)}</div></div></div>'
+        for name, value, role in PALETTE_ENTRIES
+    )
+    return (
         f'<section class="card"><h2>Brand colors</h2>'
         f'<h2 class="section-sub">AppStream &lt;branding&gt; '
         f'<span style="font-weight:400;color:var(--muted);font-size:0.85rem">'
@@ -1114,21 +997,170 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         f'<span style="font-weight:400;color:var(--muted);font-size:0.85rem">'
         f'(flatpal/palette.py)</span></h2>'
         f'<div class="branding">{palette_html}</div></section>'
-        + (
+    )
+
+
+def _render_releases(info: dict) -> str:
+    if info["releases"]:
+        release_blocks = []
+        for r in info["releases"]:
+            body = render_rich(r["description"])
+            release_blocks.append(
+                f'<div class="release">'
+                f'<h3>{escape(r["version"] or "")} '
+                f'<span class="date">— {escape(r["date"] or "")}</span></h3>'
+                f'{body}'
+                f'</div>'
+            )
+        releases_html = "\n".join(release_blocks)
+        return (
             f'<section class="card"><h2>Releases ({len(info["releases"])})</h2>'
             f"{releases_html}</section>"
-            if info["releases"]
-            else
-            f'<section class="card"><h2>Releases</h2>'
-            f'<p style="margin:0;color:var(--muted)">No releases yet; the '
-            f'<code>&lt;releases&gt;</code> block in the metainfo is empty. '
-            f'<code>release-flatpal.sh</code> prepends a <code>&lt;release&gt;</code> '
-            f'entry to the metainfo for each tagged release.</p></section>'
         )
-        + f"{desktop_card}"
-        + f"{manifest_card}"
-        + f"{dev_manifest_card}"
-        + f"{license_card}"
+    return (
+        f'<section class="card"><h2>Releases</h2>'
+        f'<p style="margin:0;color:var(--muted)">No releases yet; the '
+        f'<code>&lt;releases&gt;</code> block in the metainfo is empty. '
+        f'<code>release-flatpal.sh</code> prepends a <code>&lt;release&gt;</code> '
+        f'entry to the metainfo for each tagged release.</p></section>'
+    )
+
+
+def _render_desktop_card(desktop: dict) -> str:
+    # Every key shown verbatim, with Categories / Keywords lifted out as
+    # tag pills for parity with the metainfo card.
+    if not desktop:
+        return ""
+    desktop_categories = [c for c in desktop.get("Categories", "").split(";") if c]
+    desktop_keywords = [k for k in desktop.get("Keywords", "").split(";") if k]
+    desktop_rows = "\n".join(
+        f'<tr><th>{escape(k)}</th><td>{escape(v)}</td></tr>'
+        for k, v in desktop.items()
+    )
+    desktop_cats = "".join(
+        f'<span class="tag">{escape(c)}</span>' for c in desktop_categories
+    )
+    desktop_keys = "".join(
+        f'<span class="tag">{escape(k)}</span>' for k in desktop_keywords
+    )
+    return (
+        f'<section class="card"><h2>Desktop entry</h2>'
+        f'<table class="kv">{desktop_rows}</table>'
+        + (f'<h2 class="section-sub">Categories</h2>'
+           f'<div class="tags">{desktop_cats}</div>' if desktop_cats else "")
+        + (f'<h2 class="section-sub">Keywords</h2>'
+           f'<div class="tags">{desktop_keys}</div>' if desktop_keys else "")
+        + f'</section>'
+    )
+
+
+def _render_manifest_card(manifest: dict) -> str:
+    # Top-level meta, finish-args (each with a small explanation from the
+    # standard set), and modules with their source pinning.
+    if manifest:
+        finish_args = manifest.get("finish-args", []) or []
+        finish_items = "".join(
+            f'<li><code>{escape(str(a))}</code> '
+            f'<span class="note">{escape(_finish_note(a))}</span></li>'
+            for a in finish_args
+        )
+        modules = manifest.get("modules", []) or []
+        return (
+            f'<section class="card"><h2>Flatpak manifest</h2>'
+            f'<table class="kv">{_render_manifest_top(manifest)}</table>'
+            f'<h2 class="section-sub">finish-args ({len(finish_args)})</h2>'
+            f'<ul class="finish-args">{finish_items}</ul>'
+            f'<h2 class="section-sub">Modules ({len(modules)})</h2>'
+            f'{_render_manifest_modules(modules)}</section>'
+        )
+    if yaml is None:
+        return (
+            '<section class="card"><h2>Flatpak manifest</h2>'
+            '<p style="color:var(--muted);margin:0">'
+            'PyYAML is not installed; install <code>python3-yaml</code> '
+            '(Debian/Ubuntu) or <code>pip install pyyaml</code> to render '
+            'this card.</p></section>'
+        )
+    return ""
+
+
+def _render_dev_manifest_card(dev_manifest: dict) -> str:
+    # Same shape as the canonical manifest but tighter: the only thing
+    # that differs is the source override (type: dir instead of type:
+    # git). Surfaced so the maintainer can sanity-check the local-build
+    # setup at a glance.
+    if not dev_manifest:
+        return ""
+    dev_modules = dev_manifest.get("modules", []) or []
+    return (
+        f'<section class="card"><h2>Dev manifest '
+        f'<span style="font-size:0.7em;color:var(--muted);font-weight:400">'
+        f'(local-build override, not seen by Flathub)</span></h2>'
+        f'<p style="margin:0 0 12px;color:var(--muted);font-size:0.9rem">'
+        f'Used by <code>release-flatpal.sh</code> Mode 1 and §9 lint runs. '
+        f'Same finish-args as the canonical manifest above; only the source '
+        f'differs: <code>type: dir, path: .</code> so flatpak-builder copies '
+        f'the working tree instead of cloning a tag.</p>'
+        f'<table class="kv">{_render_manifest_top(dev_manifest)}</table>'
+        f'<h2 class="section-sub">Modules ({len(dev_modules)})</h2>'
+        f'{_render_manifest_modules(dev_modules)}</section>'
+    )
+
+
+def _render_license_card(license_info: dict, info: dict) -> str:
+    # Title, line count, file size, head excerpt.
+    if not license_info:
+        return ""
+    head_html = "".join(
+        f'<div>{escape(line)}</div>' for line in license_info.get("head", [])
+    )
+    return (
+        f'<section class="card"><h2>License</h2>'
+        f'<div class="metadata-grid">'
+        f'<div class="item"><div class="label">SPDX</div>'
+        f'<div class="value">{escape(info.get("project_license") or "—")}</div></div>'
+        f'<div class="item"><div class="label">Title</div>'
+        f'<div class="value">{escape(license_info["title"])}</div></div>'
+        f'<div class="item"><div class="label">Lines</div>'
+        f'<div class="value">{license_info["lines"]}</div></div>'
+        f'<div class="item"><div class="label">Size</div>'
+        f'<div class="value">{license_info["bytes"]:,} bytes</div></div>'
+        f'<div class="item"><div class="label">Path</div>'
+        f'<div class="value">{escape(license_info["path"])}</div></div>'
+        f'</div>'
+        f'<div class="license-head">{head_html}</div></section>'
+    )
+
+
+def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
+           license_info: dict,
+           validations: list[tuple[str, str, int]]) -> str:
+    brand_light = info["branding"][0]["value"] if info["branding"] else "#e6e6e6"
+    brand_dark = info["branding"][1]["value"] if len(info["branding"]) > 1 else "#1c1c1c"
+    css = CSS % {"brand_light": brand_light, "brand_dark": brand_dark}
+
+    banners_html = "\n".join(_render_banner_row(*v) for v in validations)
+    title = escape(info["name"] or "metainfo preview")
+
+    return (
+        "<!DOCTYPE html>\n"
+        f'<html lang="en"><head><meta charset="utf-8">'
+        f"<title>{title} | Flathub release preview</title>"
+        f"<style>{css}</style></head><body>"
+        f'<div class="container">'
+        f'<div class="banners">{banners_html}</div>'
+        + _render_hero(title, info)
+        + _render_overview(info)
+        + _render_screenshots(info)
+        + _render_description(info)
+        + _render_links(info)
+        + _render_tags(info)
+        + _render_brand_colors(info)
+        + _render_releases(info)
+        + _render_desktop_card(desktop)
+        + _render_manifest_card(manifest)
+        + _render_dev_manifest_card(dev_manifest)
+        + _render_license_card(license_info, info)
         + f"<footer>Generated from <code>{escape(METAINFO.name)}</code>, "
         + f"<code>{escape(DESKTOP.name)}</code>, "
         + f"<code>{escape(MANIFEST.name)}</code> + <code>{escape(DEV_MANIFEST.name)}</code>, "
