@@ -4,23 +4,16 @@
 
 # Flatpal
 
-**Your friendly Flatpak overview companion.**
+A GTK4 overview of your Flatpak apps: what's installed, what's running, and
+what's on Flathub. Doesn't replace `flatpak` or GNOME Software; it's a
+read-only viewer that hands off install/uninstall actions to whichever
+software centre you already use.
 
 *Released under [GPL-3.0-or-later](LICENSE).*
 
 </div>
 
-Flatpal sits next to the Flatpak apps on your machine and gives you a clear,
-calm picture of what's there: what's installed, what's running right now, and
-what's worth a look on Flathub. It doesn't replace `flatpak`, GNOME Software,
-or any other tool — it just makes it easier to *see* your flatpaks at a
-glance, and to dig into one when you're curious.
-
-Think of it as a well-organised drawer for the apps you already chose.
-
 ## What you get
-
-Three tabs, one window, lots of helpful context.
 
 ### Running
 
@@ -28,19 +21,17 @@ Three tabs, one window, lots of helpful context.
   <img src="data/screenshots/running-tab.png" alt="Running tab, four apps with Inkscape expanded to show three sandboxes" width="780">
 </p>
 
-A live look at every Flatpak sandbox currently running on your system,
-with **CPU and memory** refreshed every two seconds (pick 1, 2, 5, 10
-or 30 s from the inline dropdown — the next sample only fires while the
-tab is visible). The status line on the left rolls up the total CPU and
+Every running Flatpak sandbox with its CPU and memory, sampled every
+two seconds (1, 2, 5, 10 or 30 s picker; the next sample only fires
+while the tab is visible). The status line on the left totals CPU and
 memory across all running apps.
 
 Apps with more than one sandbox expand into a per-instance breakdown:
-each sub-row shows its **PID, command line, time since start** and its
-own CPU / memory share — so you can tell which open Inkscape window is
-actually doing the work. Sort by CPU (default, heaviest hitters on top),
-memory, or name. Toggle **Freeze position** to pin the current order
-while sampling swings keep updating the numbers, and **Collapse all**
-appears whenever any expander is open.
+each sub-row shows its PID, command line, time since start, and per-
+instance CPU / memory share, so a multi-window Inkscape session tells
+you which window is doing the work. Sort by CPU (default), memory, or
+name. **Freeze position** pins the current order while the numbers
+keep updating; **Collapse all** appears whenever any expander is open.
 
 ### Installed
 
@@ -48,14 +39,12 @@ appears whenever any expander is open.
   <img src="data/screenshots/installed-tab.png" alt="Installed tab, twelve apps sorted by install date" width="780">
 </p>
 
-Every app deployed on the machine, each with its icon, version, on-disk
-size and the date you first installed it. Start typing anywhere in the
-window to filter by name, app ID, developer or summary — the search box
-is always focused, you never have to click into it. Sort by name, install
-date (newest first by default), or size. Any app whose remote has a
-newer version picks up a small terracotta **Update available** pill on
-its row (the same pill shows on the Running and Explore tabs whenever
-the affected app appears there).
+Every installed Flatpak app with its icon, version, on-disk size, and
+install date. Type anywhere in the window to filter by name, app ID,
+developer, or summary — the search box stays focused. Sort by name,
+install date (newest first by default), or size. Apps whose remote has
+a newer version get a terracotta **Update available** pill; the same
+pill appears on the Running and Explore tabs.
 
 ### Explore
 
@@ -63,20 +52,18 @@ the affected app appears there).
   <img src="data/screenshots/explore-tab.png" alt="Explore tab, Popular on Flathub shelf with install counts" width="780">
 </p>
 
-Browse Flathub's catalogue without leaving the window. Search by name,
-ID, developer or summary across ~4 000 apps using your local AppStream
-cache (no extra network for the search itself). Default sort is **most
-popular** by installs in the past month — the data comes from Flathub's
-collection API, fetched in four parallel pages and cached for 24 h. Apps
-you already have wear a small "Installed" badge.
+Search Flathub's ~4 000-app catalogue from your local AppStream cache
+(no network for the search itself). Default sort is most popular by
+installs in the past month; the popularity data is fetched in four
+parallel pages from Flathub's collection API and cached for 24 h.
+Installed apps show an "Installed" badge.
 
-Empty search shows a **"Popular on Flathub"** shelf — the top apps right
-now, ready to click. Lists start at 50 entries with a *Show more* button
-that extends 50 at a time, up to the full top-1000. The **Show popular**
-switch on the right hides the empty-state shelf when you'd rather see a
-plain "Type to search" placeholder; the popularity sort and the per-row
-install-count chips keep working regardless, because the underlying
-Flathub call is cached for 24 h either way.
+With the search box empty, a **Popular on Flathub** shelf lists the top
+apps. Lists start at 50 entries with a *Show more* button that extends
+50 at a time, up to the full top-1000. The **Show popular** switch
+hides the empty-state shelf when you'd rather see a plain "Type to
+search" placeholder; the popularity sort and the per-row install-count
+chips keep working either way.
 
 ## The detail page
 
@@ -86,36 +73,32 @@ Flathub call is cached for 24 h either way.
   <img src="data/screenshots/detail2.png" alt="Detail page, catalog-only app with screenshots and license" width="420">
 </p>
 
-Click any app — installed or not — to slide into a detail view with the
-summary, screenshots, full description, license, homepage, donate / help /
-issue-tracker links, and (for installed apps) a compact sandbox-permissions
-summary plus version, size and install date. Catalog-only apps land on
-the same page minus the install-specific fields; same layout, less
-clutter.
+Click any app (installed or not) for a detail view with the summary,
+screenshots, full description, license, homepage, donate / help /
+issue-tracker links, and (for installed apps) a sandbox-permissions
+summary plus version, size, and install date. Catalog-only apps use
+the same layout minus the install-specific fields.
 
 <p align="center">
   <img src="data/screenshots/detail-update.png" alt="Detail page, Update available card with version diff and release notes" width="480">
 </p>
 
-When the app you're looking at has a pending update, a tinted **Update
-available** card slots in under the hero with the version diff
+If the app has a pending update, a tinted **Update available** card
+slots in under the hero with the version diff
 (`{current} → {new} · on {origin}`) and inline release notes for every
-version between the one you have and the one on the remote — pulled
-from the Flathub catalog's release list, not the local metainfo, so the
-notes for versions newer than what's installed are visible.
+version between the installed one and the remote. Notes come from the
+Flathub catalog's release list, not the local metainfo, so versions
+newer than what's installed are visible.
 
-Click a screenshot to open it **borderless fullscreen** on the same
-monitor as the Flatpal window, with arrow-key navigation through the
-gallery and Escape / `q` to close.
+Click a screenshot to open it borderless-fullscreen on the same monitor
+as the Flatpal window. Arrow keys navigate the gallery; Escape or `q`
+closes.
 
-Two action buttons in the header:
+Two header buttons:
 
-- **Open app**: runs the installed flatpak (shown only when it's installed).
-- **Open in Software**: hands off to GNOME Software when you want to
-  install, uninstall or update.
-
-Flatpal is happy to be the place you *look*; it lets your distro's software
-centre be the place you *act*.
+- **Open app**: runs the installed flatpak (installed apps only).
+- **Open in Software**: hands off to GNOME Software for install,
+  uninstall, or update.
 
 ## Install (user-local, fully reversible)
 
@@ -123,7 +106,7 @@ centre be the place you *act*.
 ./install.sh
 ```
 
-Drops six things into `~/.local`:
+Drops these into `~/.local`:
 
 | Where                                                                     | What                              |
 | ------------------------------------------------------------------------- | --------------------------------- |
@@ -141,8 +124,8 @@ the GNOME / Zorin activities overview.
 flatpal --detail=org.signal.Signal
 ```
 
-Window opens directly on that app's detail page — handy if you're wiring
-Flatpal into another tool's "more info" action.
+Opens directly on that app's detail page; useful when wiring Flatpal
+into another tool's "more info" action.
 
 ### Uninstall
 
@@ -150,11 +133,11 @@ Flatpal into another tool's "more info" action.
 ./uninstall.sh
 ```
 
-Removes every file the installer placed and refreshes the desktop / icon
-caches. The screenshot cache at `~/.cache/flatpal/screenshots/` and the
-Flathub popularity cache at `~/.cache/flatpal/flathub-popular.json` are
-left alone (they're cheap to rebuild; delete them yourself if you'd like
-the disk space back).
+Removes every file the installer placed and refreshes the desktop /
+icon caches. The screenshot cache at `~/.cache/flatpal/screenshots/`
+and the Flathub popularity cache at
+`~/.cache/flatpal/flathub-popular.json` are left in place; delete them
+manually to reclaim the disk space.
 
 ## Requirements
 
@@ -164,8 +147,8 @@ Ubuntu 24.04, Fedora 40+):
 - `python3-gi`, `gir1.2-gtk-4.0`, `gir1.2-adw-1` (libadwaita ≥ 1.4, tested
   against 1.5)
 - `python3-psutil` (Running tab CPU/memory sampling)
-- `flatpak` (obviously)
-- `gnome-software` (only used for the "Open in Software" hand-off)
+- `flatpak`
+- `gnome-software` (only used by "Open in Software")
 
 No third-party Python packages. Everything is stdlib + GObject Introspection.
 
@@ -181,7 +164,7 @@ flatpal/                Python package
   installed_page.py     Installed tab
   running_page.py       Running tab UI (expander rows, freeze toggle, refresh dropdown)
   running.py            `flatpak ps` parser + psutil-based stats tracker (pure)
-  explore_page.py       Explore tab — search, popular shelf, Show more
+  explore_page.py       Explore tab: search, popular shelf, Show more
   detail.py             Per-app detail page (Adw.NavigationPage)
   screenshot_viewer.py  Borderless fullscreen gallery
   navigator.py          Wraparound image navigator (pure)
@@ -195,7 +178,7 @@ flatpal/                Python package
   core.py               flatpak list / history parsing, sort (pure)
   settings.py           JSON-on-disk preferences (last tab, sort orders, …) (pure)
   widgets.py            Shared small widgets (sort pill, freeze pill, update pill, …)
-  palette.py            Brand palette constants — shared with tools/preview_flathub.py (pure)
+  palette.py            Brand palette constants, shared with tools/preview_flathub.py (pure)
   host.py               `flatpak-spawn --host` wrapper for sandboxed subprocess calls (pure)
   debuglog.py           Opt-in file logger gated on FLATPAL_DEBUG=1
   constants.py          Tuning knobs in one place
@@ -204,9 +187,8 @@ install.sh              User-local installer
 uninstall.sh            Removes everything
 ```
 
-The `(pure)`-tagged modules import zero GTK and have no side effects at
-import time — handy if you want to reuse a parser from another Python
-project.
+The `(pure)`-tagged modules import zero GTK and have no side effects
+at import time, so they can be reused from another Python project.
 
 ### Where data comes from
 
@@ -249,9 +231,9 @@ project.
 
 ### Brand & licensing
 
-Flatpal is a small personal-scale tool. The name "Flatpal" and the squircle
-icon are this project's; the rest of the world (Flatpak, Flathub, GNOME,
-libadwaita, the apps it lists) belongs to their respective owners.
+The name "Flatpal" and the squircle icon belong to this project.
+Flatpak, Flathub, GNOME, libadwaita, and the apps Flatpal lists belong
+to their respective owners.
 
-Flatpal itself is released under the **GNU General Public License v3.0 or
-later** (SPDX: `GPL-3.0-or-later`). See [`LICENSE`](LICENSE) for the full text.
+Released under the GNU General Public License v3.0 or later (SPDX:
+`GPL-3.0-or-later`). See [`LICENSE`](LICENSE) for the full text.
