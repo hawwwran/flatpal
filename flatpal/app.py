@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import threading
 
@@ -15,8 +16,10 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 from . import settings as user_settings
 from .cache import prune_cache
 from .constants import SCREENSHOT_CACHE_MAX_BYTES
+from .core import fetch_apps, fetch_remote_options
 from .detail import DetailPage
 from .explore_page import ExplorePage
+from .host import host_cmd
 from .installed_page import InstalledPage
 from .running_page import RunningPage
 from .updates import fetch_updates
@@ -88,6 +91,12 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # how many apps are installed.
         self._start_updates_fetch()
 
+        # Detect installed apps whose origin remote has the bundle-install
+        # no-enumerate quirk and surface a one-shot dialog. The detail-page
+        # card still shows per-app even after dismissal — this is just the
+        # global heads-up.
+        self._start_no_enumerate_check()
+
         if open_app_id:
             self._open_detail_by_id(open_app_id)
 
@@ -125,6 +134,149 @@ class FlatpalWindow(Adw.ApplicationWindow):
     def updates_lookup(self, app_id: str):
         """Return the update record for `app_id` (or None)."""
         return self._updates.get(app_id) if self._updates_loaded else None
+
+    # ----- no-enumerate startup warning -----------------------------------
+
+    def _start_no_enumerate_check(self) -> None:
+        """Detect installed apps with no-enumerate origin remotes.
+
+        Background worker so two `flatpak` calls (list + remotes) don't delay
+        first paint. The dismissed setting is *one-shot*: when the issue
+        clears (no affected remotes), we auto-reset it so a future bundle
+        install that re-introduces a no-enumerate remote triggers the dialog
+        again. Without this auto-reset, dismissing once would permanently
+        silence the warning even for unrelated future occurrences.
+        """
+        was_dismissed = bool(self.settings.get("no_enumerate_warning_dismissed"))
+
+        def worker():
+            apps = fetch_apps()
+            opts_by_remote = fetch_remote_options()
+            affected = set()
+            for app in apps:
+                remote = app.get("origin", "")
+                if not remote:
+                    continue
+                scope = "user" if app.get("installation") == "user" else "system"
+                if "no-enumerate" in opts_by_remote.get((remote, scope), set()):
+                    affected.add((remote, scope))
+
+            if not affected:
+                if was_dismissed:
+                    def reset():
+                        self._save_setting("no_enumerate_warning_dismissed", False)
+                        return False
+                    GLib.idle_add(reset)
+                return
+
+            if was_dismissed:
+                # Issue still present but user chose silence — respect it.
+                return
+
+            def show():
+                self._present_no_enumerate_dialog(affected)
+                return False
+
+            GLib.idle_add(show)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _present_no_enumerate_dialog(self, affected: set) -> None:
+        remotes_summary = ", ".join(sorted(r for r, _ in affected))
+        plural = "remote is" if len(affected) == 1 else "remotes are"
+
+        dialog = Adw.AlertDialog(
+            heading="Apps hidden from GNOME Software",
+            body=(
+                f"{len(affected)} {plural} configured with no-enumerate, which "
+                "keeps GNOME Software from indexing the apps installed from "
+                "them. \"Open in Software\" and the catalog search both miss "
+                "these apps until the flag is cleared.\n\n"
+                f"Affected: {remotes_summary}\n\n"
+                "Fix clears the flag and refreshes the AppStream catalog. "
+                "Close warning suppresses this dialog on future launches; "
+                "the per-app warning in the detail view stays."
+            ),
+        )
+        dialog.add_response("close", "Close warning")
+        dialog.add_response("fix", "Fix")
+        dialog.set_response_appearance("fix", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("fix")
+        dialog.set_close_response("close")
+        dialog.connect("response", self._on_no_enumerate_response, affected)
+        dialog.present(self)
+
+    def _on_no_enumerate_response(
+        self, _dialog: Adw.AlertDialog, response: str, affected: set
+    ) -> None:
+        if response == "fix":
+            self._fix_no_enumerate_remotes(affected)
+        else:
+            # "close" (button) or default close-response (Esc) — both mean
+            # "the user actively chose not to fix", so persist the suppression.
+            self._save_setting("no_enumerate_warning_dismissed", True)
+
+    def _fix_no_enumerate_remotes(self, remotes: set) -> None:
+        """Run remote-modify + appstream refresh on every affected remote.
+
+        Per-remote: only the `remote-modify` is critical (it's the actual fix);
+        the `update --appstream` is a nice-to-have for immediate Software
+        catalog visibility, so its failures stay silent. A `remote-modify`
+        failure is captured and surfaced via a follow-up dialog — that's the
+        bug-class that bit us once with `--no-no-enumerate`.
+
+        polkit prompts once per --system invocation; --user invocations skip it.
+        """
+        def worker():
+            failures: list = []
+            for remote, scope in remotes:
+                scope_flag = f"--{scope}"
+                try:
+                    r = subprocess.run(
+                        host_cmd(
+                            ["flatpak", "remote-modify", scope_flag,
+                             "--enumerate", remote]
+                        ),
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if r.returncode != 0:
+                        failures.append(
+                            (remote, scope, r.stderr.strip() or "unknown error")
+                        )
+                        continue
+                    subprocess.run(
+                        host_cmd(
+                            ["flatpak", "update", scope_flag,
+                             "--appstream", remote]
+                        ),
+                        capture_output=True, text=True, timeout=60,
+                    )
+                except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+                    failures.append((remote, scope, str(exc)))
+
+            if failures:
+                def show_failure():
+                    self._present_fix_failure_dialog(failures)
+                    return False
+                GLib.idle_add(show_failure)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _present_fix_failure_dialog(self, failures: list) -> None:
+        lines = [
+            f"• {remote} ({scope}): {err}" for remote, scope, err in failures
+        ]
+        dialog = Adw.AlertDialog(
+            heading="Couldn't clear no-enumerate on some remotes",
+            body=(
+                "The startup warning will reappear on the next launch.\n\n"
+                + "\n".join(lines)
+            ),
+        )
+        dialog.add_response("ok", "OK")
+        dialog.set_default_response("ok")
+        dialog.set_close_response("ok")
+        dialog.present(self)
 
     def _apply_restored_settings(self):
         s = self.settings

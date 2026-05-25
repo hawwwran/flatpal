@@ -178,3 +178,33 @@ def fetch_apps() -> list:
     if res is None or res.returncode != 0:
         return []
     return parse_list_output(res.stdout, fetch_install_dates())
+
+
+def fetch_remote_options() -> dict:
+    """Return {(name, scope): {options}} for every configured flatpak remote.
+
+    `scope` is "system" or "user" (matching what `flatpak list --columns=installation`
+    reports for the corresponding installed apps). `options` is the set parsed
+    from the `options` column with the scope token stripped — typically
+    something like {"no-enumerate"} or empty.
+
+    Used to detect the bundle-install quirk where the auto-created remote has
+    `no-enumerate=true`, which keeps GNOME Software from indexing the app.
+    """
+    res = _run_flatpak(["remotes", "--columns=name,options"])
+    if res is None or res.returncode != 0:
+        return {}
+    result: dict = {}
+    for line in res.stdout.splitlines():
+        if not line.strip():
+            continue
+        cells = line.split("\t")
+        if len(cells) < 2:
+            continue
+        name, options_str = cells[0].strip(), cells[1].strip()
+        opts = {o.strip() for o in options_str.split(",") if o.strip()}
+        scope = "user" if "user" in opts else "system"
+        opts.discard("system")
+        opts.discard("user")
+        result[(name, scope)] = opts
+    return result

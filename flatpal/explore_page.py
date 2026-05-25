@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 from typing import Callable, Optional, Set
 
@@ -12,10 +11,9 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
-from .catalog import load_catalog
 from .constants import INITIAL_LIMIT, LOAD_MORE_INCREMENT, MAX_LIMIT
-from .metainfo import system_lang
-from .popularity import format_install_count, load_popular, popularity_index
+from .explore_data import CatalogManager
+from .popularity import format_install_count
 from .search import popular_shelf, search_catalog
 from .widgets import (
     make_installed_pill, make_sort_pill, make_update_pill, update_tooltip,
@@ -104,16 +102,7 @@ class ExplorePage(Gtk.Box):
         # shelf in the empty-search state. When False: those network calls are
         # skipped. Local AppStream catalog search keeps working either way.
         self._show_popular = True
-        self._catalog: dict = {}
-        self._catalog_loaded = False
-        self._catalog_loading = False
-        self._popularity_hits: list = []
-        self._popularity_index: dict = {}
-        self._popularity_loaded = False
-        self._popularity_loading = False
-        # Per-page progress so we can surface partial fetches in the UI.
-        self._popularity_pages_done = 0
-        self._popularity_pages_total = 0
+        self._data = CatalogManager(on_loaded=self.refresh)
         self._sort_by = "popularity"
         self._last_query = ""
         self._popular_limit = INITIAL_LIMIT
@@ -327,8 +316,8 @@ class ExplorePage(Gtk.Box):
         fetched it's cached for 24 h, so the popularity sort and the install-
         count chips keep working even when the shelf is hidden.
         """
-        self._ensure_catalog()
-        self._ensure_popularity()
+        self._data.ensure_catalog()
+        self._data.ensure_popularity()
         # Re-render right away so the empty-search state flips from the
         # "Type to search" placeholder to the loading spinner; without this
         # the spinner only appears once one of the worker threads finishes
@@ -343,9 +332,9 @@ class ExplorePage(Gtk.Box):
         remote and includes versions newer than what's deployed locally,
         which is exactly the "what's new since installed" diff the update
         box renders. Catalog parse is ~1 s of local IO, cheap to do eagerly.
-        Idempotent thanks to `_ensure_catalog`'s short-circuits.
+        Idempotent thanks to CatalogManager.ensure_catalog's short-circuits.
         """
-        self._ensure_catalog()
+        self._data.ensure_catalog()
 
     def set_show_popular(self, value: bool) -> None:
         """Toggle the empty-state popular shelf.
@@ -383,87 +372,18 @@ class ExplorePage(Gtk.Box):
         self.refresh()
 
     def catalog_app(self, app_id: str) -> Optional[dict]:
-        return self._catalog.get(app_id) if self._catalog_loaded else None
+        return self._data.catalog.get(app_id) if self._data.catalog_loaded else None
 
     # ----- internals -------------------------------------------------------
-
-    def _ensure_catalog(self):
-        if self._catalog_loaded or self._catalog_loading:
-            return
-        self._catalog_loading = True
-        if self._last_query.strip():
-            self.stack.set_visible_child_name("loading")
-
-        lang = system_lang()
-
-        def worker():
-            # Catch *anything* so the finish() callback always fires and the
-            # _catalog_loading flag clears. Without this, an exception inside
-            # load_catalog (or any helper it calls) leaves the Explore tab
-            # stuck on the loading spinner forever.
-            try:
-                data = load_catalog(lang=lang)
-            except Exception:
-                data = {}
-
-            def finish():
-                self._catalog = data
-                self._catalog_loaded = True
-                self._catalog_loading = False
-                self.refresh()
-                return False
-
-            GLib.idle_add(finish)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _ensure_popularity(self):
-        if self._popularity_loaded or self._popularity_loading:
-            return
-        self._popularity_loading = True
-        # Reset page counters so any prior fetch's numbers don't leak into
-        # the status line if we're re-fetching after a manual refresh.
-        self._popularity_pages_done = 0
-        self._popularity_pages_total = 0
-
-        def on_progress(done, total, _hits):
-            # Fired from the fetcher's worker thread; hop to GTK's main thread.
-            def update():
-                self._popularity_pages_done = done
-                self._popularity_pages_total = total
-                return False
-            GLib.idle_add(update)
-
-        def worker():
-            # Catch everything so the finish() callback always fires; without
-            # this an exception from load_popular or popularity_index leaves
-            # the spinner stuck and ensure_data_loaded() permanently no-ops.
-            try:
-                hits = load_popular(on_progress=on_progress)
-            except Exception:
-                hits = []
-            try:
-                idx = popularity_index(hits)
-            except Exception:
-                idx = {}
-
-            def finish():
-                self._popularity_hits = hits
-                self._popularity_index = idx
-                self._popularity_loaded = True
-                self._popularity_loading = False
-                self.refresh()
-                return False
-
-            GLib.idle_add(finish)
-
-        threading.Thread(target=worker, daemon=True).start()
 
     def _on_search_changed(self, entry):
         self._last_query = entry.get_text()
         self._search_limit = INITIAL_LIMIT  # new query → reset pagination
-        if self._last_query.strip() and not self._catalog_loaded:
-            self._ensure_catalog()
+        if self._last_query.strip() and not self._data.catalog_loaded:
+            # Catalog parse can also be triggered by an empty query → here
+            # we want the loading spinner to appear right away.
+            self.stack.set_visible_child_name("loading")
+            self._data.ensure_catalog()
             return
         self.refresh()
 
@@ -502,7 +422,7 @@ class ExplorePage(Gtk.Box):
                 self._on_render()
             return
 
-        if not self._catalog_loaded:
+        if not self._data.catalog_loaded:
             self.stack.set_visible_child_name("loading")
             self.status_label.set_label("")
             self.sort_pill.set_visible(False)
@@ -514,9 +434,9 @@ class ExplorePage(Gtk.Box):
         # still want install-count chips on each row and a working
         # popularity sort here. So thread the loaded index through search
         # results regardless of the toggle.
-        idx = self._popularity_index if self._popularity_loaded else None
+        idx = self._data.popularity_index if self._data.popularity_loaded else None
         all_results = search_catalog(
-            self._catalog, installed_ids, query,
+            self._data.catalog, installed_ids, query,
             limit=MAX_LIMIT,
             sort_by=self._sort_by,
             popularity_idx=idx,
@@ -544,7 +464,7 @@ class ExplorePage(Gtk.Box):
                     f"{'es' if len(all_results) != 1 else ''}"
                 )
             self.status_label.set_label(
-                f"{base} from {len(self._catalog)} Flathub apps"
+                f"{base} from {len(self._data.catalog)} Flathub apps"
             )
             self.sort_pill.set_label(f"sorted by {sort_label}")
             self.sort_pill.set_visible(True)
@@ -554,7 +474,7 @@ class ExplorePage(Gtk.Box):
         else:
             self.stack.set_visible_child_name("empty")
             self.status_label.set_label(
-                f"No matches in {len(self._catalog)} Flathub apps"
+                f"No matches in {len(self._data.catalog)} Flathub apps"
             )
             self.sort_pill.set_visible(False)
             self.search_more_btn.set_visible(False)
@@ -574,9 +494,9 @@ class ExplorePage(Gtk.Box):
             return
 
         # If both catalog and popularity are loaded → show popular shelf.
-        if self._catalog_loaded and self._popularity_loaded and self._popularity_hits:
+        if self._data.catalog_loaded and self._data.popularity_loaded and self._data.popularity_hits:
             all_rows = popular_shelf(
-                self._popularity_hits, self._catalog, installed_ids,
+                self._data.popularity_hits, self._data.catalog, installed_ids,
                 limit=MAX_LIMIT,
             )
             self._popular_results = all_rows
@@ -598,8 +518,8 @@ class ExplorePage(Gtk.Box):
                 "in the past month"
             )
             # If the popularity fetch was only partially successful, say so.
-            done = self._popularity_pages_done
-            total = self._popularity_pages_total
+            done = self._data.popularity_pages_done
+            total = self._data.popularity_pages_total
             if 0 < done < total:
                 base += f" · loaded {done} of {total} pages"
             self.status_label.set_label(base)
@@ -614,8 +534,8 @@ class ExplorePage(Gtk.Box):
         # phase had a spinner and the popularity phase silently fell back to
         # the placeholder, so when popularity took a beat to arrive the user
         # saw "Type to search" and assumed the popular shelf was missing.
-        catalog_busy = not self._catalog_loaded and self._catalog_loading
-        popularity_busy = not self._popularity_loaded and self._popularity_loading
+        catalog_busy = not self._data.catalog_loaded and self._data.catalog_loading
+        popularity_busy = not self._data.popularity_loaded and self._data.popularity_loading
         if catalog_busy or popularity_busy:
             self._loading_label.set_label(
                 "Loading Flathub catalog…" if catalog_busy
@@ -631,7 +551,7 @@ class ExplorePage(Gtk.Box):
         # Popularity fetch finished with no hits (network failure, all four
         # pages failed). Show a retry surface — without one the only way to
         # recover was to quit and relaunch.
-        if self._catalog_loaded and self._popularity_loaded and not self._popularity_hits:
+        if self._data.catalog_loaded and self._data.popularity_loaded and not self._data.popularity_hits:
             self.stack.set_visible_child_name("popularity_error")
             self.status_label.set_label("")
             self.sort_pill.set_visible(False)
@@ -649,22 +569,7 @@ class ExplorePage(Gtk.Box):
         self.popular_more_btn.set_visible(False)
 
     def _retry_popularity(self):
-        """Re-arm the popularity fetch after a network failure.
-
-        `_ensure_popularity` short-circuits when `_popularity_loaded` is true,
-        so we drop the loaded flag (and the empty hits/index that landed on
-        the previous attempt) before re-firing the worker. Also clear the
-        loading flag defensively in case a future state-machine path lets
-        us reach Retry with a stale loading=True (today the error stack
-        child only renders once loading has already flipped to False).
-        """
-        self._popularity_loaded = False
-        self._popularity_loading = False
-        self._popularity_hits = []
-        self._popularity_index = {}
-        self._popularity_pages_done = 0
-        self._popularity_pages_total = 0
-        self._ensure_popularity()
+        self._data.retry_popularity()
         self.refresh()
 
     def _update_more_button(self, btn: Gtk.Button, visible_count: int, total: int):

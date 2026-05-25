@@ -19,14 +19,12 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
-from .cache import get_cached_or_download
-from .constants import THUMB_H, THUMB_W
-from .core import format_date
+from .core import fetch_remote_options, format_date
 from .host import host_cmd
 from .metainfo import load_metainfo, system_lang
 from .permissions import parse_flatpak_metadata, summarize_permissions
-from .screenshot_viewer import ScreenshotViewer
-from .updates import releases_since
+from .release_notes import build_releases_group, build_update_box
+from .screenshots import build_screenshots_row
 
 
 def open_in_software(app_id: str) -> None:
@@ -92,71 +90,6 @@ def _load_permissions(app_id: str) -> list:
     if result.returncode != 0:
         return []
     return summarize_permissions(parse_flatpak_metadata(result.stdout))
-
-
-class _Thumbnail(Gtk.Button):
-    """One screenshot thumbnail. Starts as a spinner, becomes a Picture."""
-
-    def __init__(self, app_id: str, url: str, on_click):
-        super().__init__()
-        self.set_size_request(THUMB_W, THUMB_H)
-        self.add_css_class("flat")
-        self.add_css_class("card")
-        self._app_id = app_id
-        self._url = url
-        self.path: Optional[Path] = None
-        self._on_click = on_click
-
-        self._spinner = Gtk.Spinner()
-        self._spinner.set_size_request(32, 32)
-        self._spinner.start()
-        self.set_child(self._spinner)
-
-        self.connect("clicked", self._activate)
-
-    def set_loaded(self, path: Path) -> None:
-        self.path = path
-        self._spinner.stop()  # release the tick callback before unparenting
-        picture = Gtk.Picture.new_for_filename(str(path))
-        picture.set_content_fit(Gtk.ContentFit.COVER)
-        picture.set_can_shrink(True)
-        picture.set_size_request(THUMB_W, THUMB_H)
-        self.set_child(picture)
-
-    def set_failed(self) -> None:
-        self._spinner.stop()
-        icon = Gtk.Image.new_from_icon_name("image-missing-symbolic")
-        icon.set_pixel_size(48)
-        icon.add_css_class("dim-label")
-        self.set_child(icon)
-
-    def _activate(self, _btn):
-        if self.path is not None and self._on_click:
-            self._on_click(self)
-
-
-def _start_download_thread(app_id: str, url: str, thumb: _Thumbnail) -> None:
-    """Download the screenshot off the main thread, then update the thumb."""
-
-    def worker():
-        path = get_cached_or_download(app_id, url)
-
-        def finish():
-            # The user may have navigated away while we were downloading; the
-            # thumbnail has been unparented in that case and updating it is
-            # wasted work (and could spin up Picture/Pixbuf for nothing).
-            if thumb.get_parent() is None:
-                return False
-            if path is not None:
-                thumb.set_loaded(path)
-            else:
-                thumb.set_failed()
-            return False
-
-        GLib.idle_add(finish)
-
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
 
 
 class DetailPage(Adw.NavigationPage):
@@ -271,12 +204,17 @@ class DetailPage(Adw.NavigationPage):
         # update. Skipped when there's no available update or the app is
         # being viewed from the catalog (Open in Software handles that flow).
         if self.installed and self.update_info:
-            body.append(self._build_update_box(app, meta, self.update_info))
+            body.append(build_update_box(app, meta, self.update_info))
 
         if meta["screenshots"]:
-            body.append(self._build_screenshots_row(app["id"], meta["screenshots"]))
+            body.append(build_screenshots_row(
+                app["id"], meta["screenshots"], self.parent_window,
+            ))
 
         if self.installed:
+            warning = self._build_remote_no_enumerate_warning(app)
+            if warning is not None:
+                body.append(warning)
             body.append(self._build_actions_row(app))
 
         description = meta["description_markup"]
@@ -289,7 +227,7 @@ class DetailPage(Adw.NavigationPage):
             body.append(self._build_permissions_group(permissions))
 
         if meta["releases"]:
-            body.append(self._build_releases_group(meta["releases"]))
+            body.append(build_releases_group(meta["releases"]))
 
         clamp.set_child(body)
         scrolled.set_child(clamp)
@@ -362,32 +300,6 @@ class DetailPage(Adw.NavigationPage):
         box.append(text)
         return box
 
-    def _build_screenshots_row(self, app_id: str, screenshots: list) -> Gtk.Widget:
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        heading = Gtk.Label(label="Screenshots")
-        heading.set_halign(Gtk.Align.START)
-        heading.add_css_class("heading")
-        outer.append(heading)
-
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        scroller.set_min_content_height(THUMB_H + 8)
-
-        strip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        strip.set_margin_bottom(6)
-        self._thumbnails: list = []
-        for shot in screenshots:
-            thumb = _Thumbnail(app_id, shot["source_url"], self._open_fullscreen)
-            if shot.get("caption"):
-                thumb.set_tooltip_text(shot["caption"])
-            strip.append(thumb)
-            self._thumbnails.append(thumb)
-            _start_download_thread(app_id, shot["source_url"], thumb)
-
-        scroller.set_child(strip)
-        outer.append(scroller)
-        return outer
-
     def _build_actions_row(self, app: dict) -> Gtk.Widget:
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         row.set_halign(Gtk.Align.START)
@@ -404,85 +316,128 @@ class DetailPage(Adw.NavigationPage):
         row.append(open_btn)
         return row
 
-    def _build_update_box(
-        self, app: dict, meta: dict, update_info: dict,
-    ) -> Gtk.Widget:
-        """Terracotta-tinted callout: current vs new version + release notes.
+    def _build_remote_no_enumerate_warning(self, app: dict) -> Optional[Gtk.Widget]:
+        """Card explaining the bundle-install no-enumerate quirk, with a fix button.
 
-        Lives at the top of the detail body (just under the hero) so the
-        diff is the first thing the user sees on an updateable app. Release
-        notes are inlined (not expanders) so the "what's new since
-        installed" content is readable without an extra click.
+        Returns None when the app's origin remote is fine. Otherwise builds a
+        warning surface above the actions row. Clicking Fix runs
+        `flatpak remote-modify --enumerate <remote>` and then refreshes
+        the AppStream catalog so GNOME Software immediately picks up the app.
         """
-        new_v = update_info.get("version") or "?"
-        origin = update_info.get("origin") or "remote"
-        current = app.get("version") or "?"
+        remote = app.get("origin", "")
+        scope = "user" if app.get("installation") == "user" else "system"
+        if not remote:
+            return None
+        opts = fetch_remote_options().get((remote, scope), set())
+        if "no-enumerate" not in opts:
+            return None
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        outer.add_css_class("flatpal-update-card")
+        card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        card.add_css_class("card")
+        card.set_margin_top(0)
 
-        header = Gtk.Label(label="Update available")
-        header.set_xalign(0.0)
-        header.add_css_class("title-3")
-        outer.append(header)
+        icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+        icon.set_pixel_size(28)
+        icon.set_margin_start(16)
+        icon.set_margin_top(14)
+        icon.set_margin_bottom(14)
+        icon.set_valign(Gtk.Align.START)
+        card.append(icon)
 
-        diff = Gtk.Label(label=f"{current} → {new_v}   ·   on {origin}")
-        diff.set_xalign(0.0)
-        diff.add_css_class("heading")
-        outer.append(diff)
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        text.set_hexpand(True)
+        text.set_margin_top(12)
+        text.set_margin_bottom(12)
 
-        # "What's new since v0.1.0" — release notes slice from the metainfo
-        # for everything that landed after the installed version. Empty
-        # `releases_since` (no release tags, or installed == latest known)
-        # falls through to the "release notes unavailable" branch below so
-        # the card doesn't look truncated under the version-diff header.
-        new_releases = releases_since(meta.get("releases") or [], current)
-        if new_releases:
-            since = Gtk.Label(label=f"What's new since {current}")
-            since.set_xalign(0.0)
-            since.add_css_class("dim-label")
-            since.add_css_class("caption-heading")
-            since.set_margin_top(8)
-            outer.append(since)
+        title = Gtk.Label(label="Hidden from GNOME Software")
+        title.set_halign(Gtk.Align.START)
+        title.add_css_class("heading")
+        text.append(title)
 
-            for rel in new_releases:
-                ver_label = Gtk.Label()
-                ver_label.set_markup(
-                    f"<b>{GLib.markup_escape_text(rel['version'] or '—')}</b>"
-                    + (
-                        f"  <span alpha='65%'>· {GLib.markup_escape_text(rel['date'])}</span>"
-                        if rel.get("date") else ""
-                    )
+        body_label = Gtk.Label(
+            label=(
+                f"The remote <tt>{GLib.markup_escape_text(remote)}</tt> "
+                f"({scope}) was added with <tt>no-enumerate</tt>, which keeps "
+                "GNOME Software from indexing this app. “Open in Software” "
+                "may fail until the flag is cleared."
+            )
+        )
+        body_label.set_use_markup(True)
+        body_label.set_halign(Gtk.Align.START)
+        body_label.set_wrap(True)
+        body_label.set_xalign(0.0)
+        body_label.add_css_class("dim-label")
+        text.append(body_label)
+
+        card.append(text)
+
+        fix_btn = Gtk.Button(label="Fix")
+        fix_btn.add_css_class("pill")
+        fix_btn.set_valign(Gtk.Align.CENTER)
+        fix_btn.set_margin_end(16)
+        fix_btn.set_tooltip_text(
+            f"flatpak remote-modify --{scope} --enumerate {remote}"
+        )
+        fix_btn.connect(
+            "clicked",
+            lambda *_: self._fix_remote_no_enumerate(fix_btn, remote, scope, card),
+        )
+        card.append(fix_btn)
+
+        return card
+
+    def _fix_remote_no_enumerate(
+        self,
+        button: Gtk.Button,
+        remote: str,
+        scope: str,
+        card: Gtk.Widget,
+    ) -> None:
+        """Run remote-modify + appstream refresh on a worker thread, update UI on idle."""
+        button.set_sensitive(False)
+        button.set_label("Fixing…")
+
+        scope_flag = f"--{scope}"
+
+        def worker() -> None:
+            modify_cmd = host_cmd(
+                ["flatpak", "remote-modify", scope_flag, "--enumerate", remote]
+            )
+            try:
+                r = subprocess.run(
+                    modify_cmd, capture_output=True, text=True, timeout=30
                 )
-                ver_label.set_xalign(0.0)
-                ver_label.set_margin_top(6)
-                outer.append(ver_label)
+                ok = r.returncode == 0
+                err = r.stderr.strip()
+            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+                ok, err = False, str(exc)
 
-                if rel.get("description_markup"):
-                    body = Gtk.Label(label=rel["description_markup"])
-                    body.set_wrap(True)
-                    body.set_xalign(0.0)
-                    body.add_css_class("body")
-                    outer.append(body)
-        else:
-            # No body to show: either current is "?" (rare — flatpak list
-            # didn't report a version) or the metainfo's release list
-            # doesn't extend past the installed version (catalog may lag
-            # behind the remote, or upstream tags but doesn't update
-            # metainfo on time). Either way, surface a one-liner so the
-            # card doesn't look truncated under the bare version-diff line.
-            if current == "?":
-                msg = "Installed version unknown — open Software to view release notes."
-            else:
-                msg = "Release notes for the new version aren't available yet."
-            note = Gtk.Label(label=msg)
-            note.set_xalign(0.0)
-            note.add_css_class("dim-label")
-            note.set_wrap(True)
-            note.set_margin_top(8)
-            outer.append(note)
+            if ok:
+                # Refresh AppStream so Software sees the app immediately.
+                # Best-effort: a slow / failed refresh shouldn't keep the
+                # banner visible, since the underlying flag is already fixed.
+                try:
+                    subprocess.run(
+                        host_cmd(["flatpak", "update", scope_flag, "--appstream", remote]),
+                        capture_output=True, text=True, timeout=60,
+                    )
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    pass
 
-        return outer
+            def finish() -> bool:
+                parent = card.get_parent()
+                if parent is None:
+                    return False
+                if ok and isinstance(parent, Gtk.Box):
+                    parent.remove(card)
+                else:
+                    button.set_label("Failed")
+                    button.set_tooltip_text(err or "flatpak remote-modify failed")
+                return False
+
+            GLib.idle_add(finish)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _build_description(self, markup: str) -> Gtk.Widget:
         # Wrap the description in a .card surface so it reads as a distinct
@@ -586,48 +541,3 @@ class DetailPage(Adw.NavigationPage):
 
         return group
 
-    def _build_releases_group(self, releases: list) -> Adw.PreferencesGroup:
-        group = Adw.PreferencesGroup()
-        group.set_title("Recent releases")
-
-        for rel in releases:
-            label = rel["version"] or "—"
-            subtitle = rel["date"] or ""
-            if rel.get("description_markup"):
-                row = Adw.ExpanderRow()
-                row.set_title(label)
-                row.set_subtitle(subtitle)
-                inner = Gtk.Label(label=rel["description_markup"])
-                inner.set_wrap(True)
-                inner.set_xalign(0.0)
-                inner.set_margin_top(6)
-                inner.set_margin_bottom(6)
-                inner.set_margin_start(12)
-                inner.set_margin_end(12)
-                row.add_row(inner)
-            else:
-                row = Adw.ActionRow()
-                row.set_title(label)
-                row.set_subtitle(subtitle)
-            group.add(row)
-
-        return group
-
-    # ----- behaviour -------------------------------------------------------
-
-    def _open_fullscreen(self, clicked_thumb: "_Thumbnail") -> None:
-        """Open the viewer over every thumbnail that has finished downloading.
-
-        Skips placeholders / failed downloads so the gallery only navigates
-        between images that actually exist on disk.
-        """
-        loaded = [t for t in getattr(self, "_thumbnails", []) if t.path is not None]
-        if not loaded:
-            return
-        paths = [t.path for t in loaded]
-        try:
-            start = loaded.index(clicked_thumb)
-        except ValueError:
-            start = 0
-        viewer = ScreenshotViewer(paths, index=start, transient_for=self.parent_window)
-        viewer.present()

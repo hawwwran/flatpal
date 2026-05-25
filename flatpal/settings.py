@@ -48,6 +48,11 @@ DEFAULTS: Dict[str, Any] = {
     # those network calls are skipped and the shelf is hidden; local
     # AppStream catalog search still works.
     "show_popular": True,
+    # Set to True once the user clicks "Close warning" on the startup dialog
+    # that flags installed apps whose origin remote has the bundle-install
+    # no-enumerate quirk. Suppresses only the startup dialog — the per-app
+    # warning card in the detail view still appears.
+    "no_enumerate_warning_dismissed": False,
 }
 
 
