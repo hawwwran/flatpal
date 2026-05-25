@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Optional, Set
+from typing import Callable, NamedTuple, Optional, Set
 
 import gi
 
@@ -24,6 +24,24 @@ from .widgets import (
     make_update_pill,
     update_tooltip,
 )
+
+
+class ViewState(NamedTuple):
+    """Snapshot of which Explore-tab widgets should be visible and labelled how.
+
+    Produced by the resolver methods (``_resolve_view_state`` and friends) from
+    immutable inputs (query string, catalog/popularity flags, computed result
+    counts); consumed by ``_apply_view_state`` which does every GTK mutation in
+    one place. Convention: empty string / ``None`` means "hide". Loading text
+    is consulted only when ``stack_child == "loading"``.
+    """
+
+    stack_child: str
+    status_text: str = ""
+    sort_pill_label: str = ""  # "" → hidden
+    search_more_label: Optional[str] = None  # None → hidden
+    popular_more_label: Optional[str] = None  # None → hidden
+    loading_text: str = ""
 
 
 class ExploreRow(Adw.ActionRow):
@@ -385,19 +403,32 @@ class ExplorePage(Gtk.Box):
         user presses Reload on the Explore tab, and internally on every state
         transition (search-changed, sort-changed, fetch-finished, …).
         """
-        query = self._last_query
         installed_ids = self._installed_ids_getter()
+        state = self._resolve_view_state(self._last_query, installed_ids)
+        self._apply_view_state(state)
 
+    # ----- view-state resolvers -------------------------------------------
+    #
+    # Each resolver returns the ViewState that should appear on screen given
+    # the current data flags. The search and popular branches additionally
+    # populate their listbox as a side effect — the row counts feed the
+    # status text and the "Show more" button label.
+
+    def _resolve_view_state(
+        self, query: str, installed_ids: Set[str],
+    ) -> ViewState:
         if not query.strip():
-            self._render_empty_state(installed_ids)
-            return
-
+            return self._resolve_empty_view_state(installed_ids)
         if not self._data.catalog_loaded:
-            self.stack.set_visible_child_name("loading")
-            self.status_label.set_label("")
-            self.sort_pill.set_visible(False)
-            return
+            return ViewState(
+                stack_child="loading",
+                loading_text="Loading Flathub catalog…",
+            )
+        return self._resolve_search_view_state(query, installed_ids)
 
+    def _resolve_search_view_state(
+        self, query: str, installed_ids: Set[str],
+    ) -> ViewState:
         # The "Show popular" toggle only hides the empty-state shelf; we
         # still want install-count chips on each row and a working
         # popularity sort here. So thread the loaded index through search
@@ -411,137 +442,158 @@ class ExplorePage(Gtk.Box):
         )
         self._all_search_results = all_results
         visible = all_results[: self._search_limit]
+        self._populate_listbox(self.listbox, visible)
 
-        clear_listbox(self.listbox)
-        for entry in visible:
-            self.listbox.append(ExploreRow(
-                entry, update_info=self._updates_lookup(entry["id"]),
-            ))
+        if not all_results:
+            return ViewState(
+                stack_child="empty",
+                status_text=f"No matches in {len(self._data.catalog)} Flathub apps",
+            )
 
-        if all_results:
-            self.stack.set_visible_child_name("results")
-            sort_label = "popularity" if self._sort_by == "popularity" else "alphabetical"
-            if len(all_results) > len(visible):
-                base = (
-                    f"Showing {len(visible)} of {len(all_results)} match"
-                    f"{'es' if len(all_results) != 1 else ''}"
-                )
-            else:
-                base = (
-                    f"{len(all_results)} match"
-                    f"{'es' if len(all_results) != 1 else ''}"
-                )
-            self.status_label.set_label(
-                f"{base} from {len(self._data.catalog)} Flathub apps"
-            )
-            self.sort_pill.set_label(f"sorted by {sort_label}")
-            self.sort_pill.set_visible(True)
-            self._update_more_button(
-                self.search_more_btn, len(visible), len(all_results)
-            )
+        matches_word = "match" if len(all_results) == 1 else "matches"
+        if len(all_results) > len(visible):
+            base = f"Showing {len(visible)} of {len(all_results)} {matches_word}"
         else:
-            self.stack.set_visible_child_name("empty")
-            self.status_label.set_label(
-                f"No matches in {len(self._data.catalog)} Flathub apps"
-            )
-            self.sort_pill.set_visible(False)
-            self.search_more_btn.set_visible(False)
+            base = f"{len(all_results)} {matches_word}"
+        sort_label = "popularity" if self._sort_by == "popularity" else "alphabetical"
+        return ViewState(
+            stack_child="results",
+            status_text=f"{base} from {len(self._data.catalog)} Flathub apps",
+            sort_pill_label=f"sorted by {sort_label}",
+            search_more_label=self._more_label(len(visible), len(all_results)),
+        )
 
-    def _render_empty_state(self, installed_ids: Set[str]):
-        # If "Show popular" is off, skip straight to the placeholder regardless
-        # of whether popularity loaded earlier.
+    def _resolve_empty_view_state(self, installed_ids: Set[str]) -> ViewState:
+        # "Show popular" off → skip straight to placeholder regardless of
+        # whether popularity loaded earlier.
         if not self._show_popular:
-            self.stack.set_visible_child_name("placeholder")
-            self.status_label.set_label("")
-            self.sort_pill.set_visible(False)
-            self.search_more_btn.set_visible(False)
-            self.popular_more_btn.set_visible(False)
-            return
+            return ViewState(stack_child="placeholder")
 
-        # If both catalog and popularity are loaded → show popular shelf.
-        if self._data.catalog_loaded and self._data.popularity_loaded and self._data.popularity_hits:
-            all_rows = popular_shelf(
-                self._data.popularity_hits, self._data.catalog, installed_ids,
-                limit=MAX_LIMIT,
-            )
-            self._popular_results = all_rows
-            visible = all_rows[: self._popular_limit]
-
-            clear_listbox(self.popular_listbox)
-            for entry in visible:
-                self.popular_listbox.append(ExploreRow(
-                    entry, update_info=self._updates_lookup(entry["id"]),
-                ))
-
-            self.stack.set_visible_child_name("popular")
-            base = (
-                f"Popular on Flathub · showing {len(visible)} of "
-                f"{len(all_rows)} by installs in the past month"
-                if len(all_rows) > len(visible)
-                else
-                f"Popular on Flathub · top {len(visible)} by installs "
-                "in the past month"
-            )
-            # If the popularity fetch was only partially successful, say so.
-            done = self._data.popularity_pages_done
-            total = self._data.popularity_pages_total
-            if 0 < done < total:
-                base += f" · loaded {done} of {total} pages"
-            self.status_label.set_label(base)
-            self.sort_pill.set_label("sorted by popularity")
-            self.sort_pill.set_visible(True)
-            self._update_more_button(
-                self.popular_more_btn, len(visible), len(all_rows)
-            )
-            return
+        # Both datasets loaded and popularity has hits → show the shelf.
+        if (
+            self._data.catalog_loaded
+            and self._data.popularity_loaded
+            and self._data.popularity_hits
+        ):
+            return self._resolve_popular_view_state(installed_ids)
 
         # Either dataset still loading → spinner. Previously only the catalog
         # phase had a spinner and the popularity phase silently fell back to
         # the placeholder, so when popularity took a beat to arrive the user
         # saw "Type to search" and assumed the popular shelf was missing.
-        catalog_busy = not self._data.catalog_loaded and self._data.catalog_loading
-        popularity_busy = not self._data.popularity_loaded and self._data.popularity_loading
+        catalog_busy = (
+            not self._data.catalog_loaded and self._data.catalog_loading
+        )
+        popularity_busy = (
+            not self._data.popularity_loaded and self._data.popularity_loading
+        )
         if catalog_busy or popularity_busy:
-            self._loading_label.set_label(
-                "Loading Flathub catalog…" if catalog_busy
-                else "Loading popular apps from Flathub…"
+            return ViewState(
+                stack_child="loading",
+                loading_text=(
+                    "Loading Flathub catalog…" if catalog_busy
+                    else "Loading popular apps from Flathub…"
+                ),
             )
-            self.stack.set_visible_child_name("loading")
-            self.status_label.set_label("")
-            self.sort_pill.set_visible(False)
-            self.search_more_btn.set_visible(False)
-            self.popular_more_btn.set_visible(False)
-            return
 
         # Popularity fetch finished with no hits (network failure, all four
-        # pages failed). Show a retry surface — without one the only way to
+        # pages failed). Surface a retry — without one the only way to
         # recover was to quit and relaunch.
-        if self._data.catalog_loaded and self._data.popularity_loaded and not self._data.popularity_hits:
-            self.stack.set_visible_child_name("popularity_error")
-            self.status_label.set_label("")
-            self.sort_pill.set_visible(False)
-            self.search_more_btn.set_visible(False)
-            self.popular_more_btn.set_visible(False)
-            return
+        if (
+            self._data.catalog_loaded
+            and self._data.popularity_loaded
+            and not self._data.popularity_hits
+        ):
+            return ViewState(stack_child="popularity_error")
 
         # Fallback: neither fetch started yet (e.g. tab opened with Show
-        # popular turned on but ensure_data_loaded hasn't fired). Land on
-        # the same placeholder we use when Show popular is off.
-        self.stack.set_visible_child_name("placeholder")
-        self.status_label.set_label("")
-        self.sort_pill.set_visible(False)
-        self.search_more_btn.set_visible(False)
-        self.popular_more_btn.set_visible(False)
+        # popular turned on but ensure_data_loaded hasn't fired).
+        return ViewState(stack_child="placeholder")
+
+    def _resolve_popular_view_state(
+        self, installed_ids: Set[str],
+    ) -> ViewState:
+        all_rows = popular_shelf(
+            self._data.popularity_hits, self._data.catalog, installed_ids,
+            limit=MAX_LIMIT,
+        )
+        self._popular_results = all_rows
+        visible = all_rows[: self._popular_limit]
+        self._populate_listbox(self.popular_listbox, visible)
+
+        if len(all_rows) > len(visible):
+            base = (
+                f"Popular on Flathub · showing {len(visible)} of "
+                f"{len(all_rows)} by installs in the past month"
+            )
+        else:
+            base = (
+                f"Popular on Flathub · top {len(visible)} by installs "
+                "in the past month"
+            )
+        # If the popularity fetch was only partially successful, say so.
+        done = self._data.popularity_pages_done
+        total = self._data.popularity_pages_total
+        if 0 < done < total:
+            base += f" · loaded {done} of {total} pages"
+
+        return ViewState(
+            stack_child="popular",
+            status_text=base,
+            sort_pill_label="sorted by popularity",
+            popular_more_label=self._more_label(len(visible), len(all_rows)),
+        )
+
+    # ----- helpers --------------------------------------------------------
+
+    def _populate_listbox(self, listbox: Gtk.ListBox, entries: list) -> None:
+        clear_listbox(listbox)
+        for entry in entries:
+            listbox.append(ExploreRow(
+                entry, update_info=self._updates_lookup(entry["id"]),
+            ))
+
+    def _more_label(self, visible_count: int, total: int) -> Optional[str]:
+        """Compose the "Show N more · M hidden" label, or None when nothing's hidden."""
+        remaining = total - visible_count
+        if remaining <= 0:
+            return None
+        next_step = min(LOAD_MORE_INCREMENT, remaining)
+        return f"Show {next_step} more · {remaining} hidden"
+
+    # ----- view-state applier ---------------------------------------------
+
+    def _apply_view_state(self, state: ViewState) -> None:
+        """Single place that mutates every state-driven widget on the page.
+
+        Co-locating the GTK calls keeps the resolvers honest: forgetting to
+        hide a more-button or the sort pill in one branch is no longer a
+        silent bug, because `_apply_view_state` always touches both.
+        """
+        self.stack.set_visible_child_name(state.stack_child)
+        self.status_label.set_label(state.status_text)
+
+        if state.sort_pill_label:
+            self.sort_pill.set_label(state.sort_pill_label)
+            self.sort_pill.set_visible(True)
+        else:
+            self.sort_pill.set_visible(False)
+
+        self._apply_more_button(self.search_more_btn, state.search_more_label)
+        self._apply_more_button(self.popular_more_btn, state.popular_more_label)
+
+        if state.stack_child == "loading" and state.loading_text:
+            self._loading_label.set_label(state.loading_text)
+
+    def _apply_more_button(
+        self, btn: Gtk.Button, label: Optional[str],
+    ) -> None:
+        if label is None:
+            btn.set_visible(False)
+            return
+        btn.set_label(label)
+        btn.set_visible(True)
 
     def _retry_popularity(self):
         self._data.retry_popularity()
         self.refresh()
-
-    def _update_more_button(self, btn: Gtk.Button, visible_count: int, total: int):
-        remaining = total - visible_count
-        if remaining <= 0:
-            btn.set_visible(False)
-            return
-        next_step = min(LOAD_MORE_INCREMENT, remaining)
-        btn.set_label(f"Show {next_step} more · {remaining} hidden")
-        btn.set_visible(True)
