@@ -15,10 +15,10 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 from . import settings as user_settings
 from .cache import prune_cache
 from .constants import SCREENSHOT_CACHE_MAX_BYTES
-from .core import fetch_apps, fetch_remote_options, fix_remote_no_enumerate
 from .detail import DetailPage
 from .explore_page import ExplorePage
 from .installed_page import InstalledPage
+from .no_enumerate import NoEnumerateCheck
 from .running_page import RunningPage
 from .updates import fetch_updates
 
@@ -93,10 +93,18 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # no-enumerate quirk and surface a one-shot dialog. The detail-page
         # card still shows per-app even after dismissal — this is just the
         # global heads-up.
-        self._start_no_enumerate_check()
+        NoEnumerateCheck(
+            self,
+            was_dismissed=bool(
+                self.settings.get("no_enumerate_warning_dismissed")
+            ),
+            on_dismissed_change=lambda v: self._save_setting(
+                "no_enumerate_warning_dismissed", v
+            ),
+        ).start()
 
         if open_app_id:
-            self._open_detail_by_id(open_app_id)
+            self.open_detail_by_id(open_app_id)
 
     def _start_updates_fetch(self) -> None:
         def worker():
@@ -132,126 +140,6 @@ class FlatpalWindow(Adw.ApplicationWindow):
     def updates_lookup(self, app_id: str):
         """Return the update record for `app_id` (or None)."""
         return self._updates.get(app_id) if self._updates_loaded else None
-
-    # ----- no-enumerate startup warning -----------------------------------
-
-    def _start_no_enumerate_check(self) -> None:
-        """Detect installed apps with no-enumerate origin remotes.
-
-        Background worker so two `flatpak` calls (list + remotes) don't delay
-        first paint. The dismissed setting is *one-shot*: when the issue
-        clears (no affected remotes), we auto-reset it so a future bundle
-        install that re-introduces a no-enumerate remote triggers the dialog
-        again. Without this auto-reset, dismissing once would permanently
-        silence the warning even for unrelated future occurrences.
-        """
-        was_dismissed = bool(self.settings.get("no_enumerate_warning_dismissed"))
-
-        def worker():
-            apps = fetch_apps()
-            opts_by_remote = fetch_remote_options()
-            affected = set()
-            for app in apps:
-                remote = app.get("origin", "")
-                if not remote:
-                    continue
-                scope = "user" if app.get("installation") == "user" else "system"
-                if "no-enumerate" in opts_by_remote.get((remote, scope), set()):
-                    affected.add((remote, scope))
-
-            if not affected:
-                if was_dismissed:
-                    def reset():
-                        self._save_setting("no_enumerate_warning_dismissed", False)
-                        return False
-                    GLib.idle_add(reset)
-                return
-
-            if was_dismissed:
-                # Issue still present but user chose silence — respect it.
-                return
-
-            def show():
-                self._present_no_enumerate_dialog(affected)
-                return False
-
-            GLib.idle_add(show)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _present_no_enumerate_dialog(self, affected: set) -> None:
-        remotes_summary = ", ".join(sorted(r for r, _ in affected))
-        plural = "remote is" if len(affected) == 1 else "remotes are"
-
-        dialog = Adw.AlertDialog(
-            heading="Apps hidden from GNOME Software",
-            body=(
-                f"{len(affected)} {plural} configured with no-enumerate, which "
-                "keeps GNOME Software from indexing the apps installed from "
-                "them. \"Open in Software\" and the catalog search both miss "
-                "these apps until the flag is cleared.\n\n"
-                f"Affected: {remotes_summary}\n\n"
-                "Fix clears the flag and refreshes the AppStream catalog. "
-                "Close warning suppresses this dialog on future launches; "
-                "the per-app warning in the detail view stays."
-            ),
-        )
-        dialog.add_response("close", "Close warning")
-        dialog.add_response("fix", "Fix")
-        dialog.set_response_appearance("fix", Adw.ResponseAppearance.SUGGESTED)
-        dialog.set_default_response("fix")
-        dialog.set_close_response("close")
-        dialog.connect("response", self._on_no_enumerate_response, affected)
-        dialog.present(self)
-
-    def _on_no_enumerate_response(
-        self, _dialog: Adw.AlertDialog, response: str, affected: set
-    ) -> None:
-        if response == "fix":
-            self._fix_no_enumerate_remotes(affected)
-        else:
-            # "close" (button) or default close-response (Esc) — both mean
-            # "the user actively chose not to fix", so persist the suppression.
-            self._save_setting("no_enumerate_warning_dismissed", True)
-
-    def _fix_no_enumerate_remotes(self, remotes: set) -> None:
-        """Clear no-enumerate on every affected remote (one polkit prompt
-        per --system invocation; --user invocations skip it).
-
-        Per-remote failures from `fix_remote_no_enumerate` are collected and
-        surfaced via a follow-up dialog so the user knows the startup
-        warning will reappear on the next launch.
-        """
-        def worker():
-            failures: list = []
-            for remote, scope in remotes:
-                ok, err = fix_remote_no_enumerate(remote, scope)
-                if not ok:
-                    failures.append((remote, scope, err))
-
-            if failures:
-                def show_failure():
-                    self._present_fix_failure_dialog(failures)
-                    return False
-                GLib.idle_add(show_failure)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _present_fix_failure_dialog(self, failures: list) -> None:
-        lines = [
-            f"• {remote} ({scope}): {err}" for remote, scope, err in failures
-        ]
-        dialog = Adw.AlertDialog(
-            heading="Couldn't clear no-enumerate on some remotes",
-            body=(
-                "The startup warning will reappear on the next launch.\n\n"
-                + "\n".join(lines)
-            ),
-        )
-        dialog.add_response("ok", "OK")
-        dialog.set_default_response("ok")
-        dialog.set_close_response("ok")
-        dialog.present(self)
 
     def _apply_restored_settings(self):
         s = self.settings
@@ -375,8 +263,8 @@ class FlatpalWindow(Adw.ApplicationWindow):
             updates_lookup=self.updates_lookup,
         )
         self.running_page = RunningPage(
-            on_row_activated=self._open_detail_by_id,
-            installed_lookup=self._installed_lookup,
+            on_row_activated=self.open_detail_by_id,
+            installed_lookup=self.installed_app_lookup,
             on_interval_changed=lambda secs: self._save_setting(
                 "running_refresh_seconds", int(secs)
             ),
@@ -522,9 +410,26 @@ class FlatpalWindow(Adw.ApplicationWindow):
 
     # ----- navigation ------------------------------------------------------
 
+    def installed_app_lookup(self, app_id: str):
+        """Return the installed-app dict for `app_id`, or None.
+
+        Used by the Running tab to enrich its rows with display names, and
+        internally by `open_detail_by_id` / `_open_detail_for_explore` to
+        route ID-only callers through the rich installed-detail path.
+        """
+        for a in self.installed_page.apps:
+            if a["id"] == app_id:
+                return a
+        return None
+
     def _open_detail_for(self, app: dict) -> None:
         """Called by InstalledPage. `app` carries full installed metadata."""
-        page = DetailPage.from_installed(app, parent_window=self)
+        page = DetailPage.from_installed(
+            app,
+            parent_window=self,
+            catalog_lookup=self.explore_page.catalog_app,
+            updates_lookup=self.updates_lookup,
+        )
         self.nav_view.push(page)
 
     def _open_detail_for_explore(self, entry: dict) -> None:
@@ -532,24 +437,22 @@ class FlatpalWindow(Adw.ApplicationWindow):
         the rich installed-detail path; otherwise show the info-only catalog
         detail."""
         if entry.get("installed"):
-            for installed in self.installed_page.apps:
-                if installed["id"] == entry["id"]:
-                    self._open_detail_for(installed)
-                    return
+            installed = self.installed_app_lookup(entry["id"])
+            if installed is not None:
+                self._open_detail_for(installed)
+                return
         page = DetailPage.from_catalog(entry, parent_window=self)
         self.nav_view.push(page)
 
-    def _open_detail_by_id(self, app_id: str) -> None:
-        for a in self.installed_page.apps:
-            if a["id"] == app_id:
-                self._open_detail_for(a)
-                return
+    def open_detail_by_id(self, app_id: str) -> None:
+        """Open the detail page for an installed app by ID. No-op if not installed.
 
-    def _installed_lookup(self, app_id: str):
-        for a in self.installed_page.apps:
-            if a["id"] == app_id:
-                return a
-        return None
+        Public because `FlatpalApp.do_activate` calls it across the
+        instance boundary when a --detail launch argument is pending.
+        """
+        installed = self.installed_app_lookup(app_id)
+        if installed is not None:
+            self._open_detail_for(installed)
 
 
 class FlatpalApp(Adw.Application):
@@ -578,7 +481,7 @@ class FlatpalApp(Adw.Application):
         if win is None:
             win = FlatpalWindow(self, open_app_id=self._pending_detail_id)
         elif self._pending_detail_id:
-            win._open_detail_by_id(self._pending_detail_id)
+            win.open_detail_by_id(self._pending_detail_id)
         self._pending_detail_id = None
         win.present()
 

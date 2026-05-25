@@ -15,6 +15,7 @@ python.install_sources(
     'installed_page.py',
     'metainfo.py',
     'navigator.py',
+    'no_enumerate.py',
     'palette.py',
     'permissions.py',
     'popularity.py',

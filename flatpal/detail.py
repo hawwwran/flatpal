@@ -11,7 +11,7 @@ from __future__ import annotations
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import gi
 
@@ -96,37 +96,41 @@ class DetailPage(Adw.NavigationPage):
     """Per-app detail view. Construct via `from_installed()` or `from_catalog()`."""
 
     @classmethod
-    def from_installed(cls, app: dict, parent_window: Gtk.Window) -> "DetailPage":
+    def from_installed(
+        cls,
+        app: dict,
+        parent_window: Gtk.Window,
+        *,
+        catalog_lookup: Optional[Callable[[str], Optional[dict]]] = None,
+        updates_lookup: Optional[Callable[[str], Optional[dict]]] = None,
+    ) -> "DetailPage":
         """Build a detail page for an app already deployed on this machine.
 
         `app` comes from `core.fetch_apps()` and carries version, size,
         install-date, branch, origin. Metainfo is read from the on-disk
         AppStream XML, and sandbox permissions from `flatpak info -m`.
+
+        `catalog_lookup(app_id) -> dict | None` overrides the locally-
+        installed metainfo's release list with the Flathub catalog's view
+        when available — the catalog reflects the remote's current state
+        so the "What's new since {installed}" body picks up releases that
+        landed after the local install. Race: the catalog loads from a
+        background worker (~1 s of local IO); a detail page opened within
+        that window falls back to the local metainfo's list and the update
+        box still surfaces the version diff, just without the body.
+
+        `updates_lookup(app_id) -> dict | None` provides the per-app update
+        record from the startup background fetch — used to populate the
+        update card under the hero.
         """
         meta = load_metainfo(app["id"], lang=system_lang())
 
-        # The locally-installed metainfo only lists releases up to whatever
-        # version was current at install time — for the "what's new since
-        # installed" diff (and the Recent releases section) we want every
-        # release the remote has, including the ones newer than what's
-        # deployed locally. The Flathub aggregated catalog reflects the
-        # remote's current state, so prefer its release list when available.
-        #
-        # Race: the catalog is loaded in a background thread from
-        # FlatpalWindow startup (~1 s of local IO). A detail page opened
-        # within that window misses the override and falls back to the
-        # local metainfo's release list — the update box still surfaces
-        # the version diff, just without the "What's new since …" body.
-        explore = getattr(parent_window, "explore_page", None)
-        catalog_entry = explore.catalog_app(app["id"]) if explore else None
+        catalog_entry = catalog_lookup(app["id"]) if catalog_lookup else None
         if catalog_entry and catalog_entry.get("releases"):
             meta = dict(meta)
             meta["releases"] = catalog_entry["releases"]
 
-        update_info = None
-        lookup = getattr(parent_window, "updates_lookup", None)
-        if callable(lookup):
-            update_info = lookup(app["id"])
+        update_info = updates_lookup(app["id"]) if updates_lookup else None
         return cls(
             app=app, parent_window=parent_window, installed=True, meta=meta,
             update_info=update_info,

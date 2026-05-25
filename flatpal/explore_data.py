@@ -29,7 +29,7 @@ class CatalogManager:
         self.catalog_loaded = False
         self.catalog_loading = False
         self.popularity_hits: list = []
-        self.popularity_index: dict = {}
+        self.popularity_idx: dict = {}
         self.popularity_loaded = False
         self.popularity_loading = False
         self.popularity_pages_done = 0
@@ -91,7 +91,7 @@ class CatalogManager:
 
             def finish():
                 self.popularity_hits = hits
-                self.popularity_index = idx
+                self.popularity_idx = idx
                 self.popularity_loaded = True
                 self.popularity_loading = False
                 self._on_loaded()
@@ -111,7 +111,7 @@ class CatalogManager:
         self.popularity_loaded = False
         self.popularity_loading = False
         self.popularity_hits = []
-        self.popularity_index = {}
+        self.popularity_idx = {}
         self.popularity_pages_done = 0
         self.popularity_pages_total = 0
         self.ensure_popularity()

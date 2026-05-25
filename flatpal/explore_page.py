@@ -402,7 +402,7 @@ class ExplorePage(Gtk.Box):
         # still want install-count chips on each row and a working
         # popularity sort here. So thread the loaded index through search
         # results regardless of the toggle.
-        idx = self._data.popularity_index if self._data.popularity_loaded else None
+        idx = self._data.popularity_idx if self._data.popularity_loaded else None
         all_results = search_catalog(
             self._data.catalog, installed_ids, query,
             limit=MAX_LIMIT,
