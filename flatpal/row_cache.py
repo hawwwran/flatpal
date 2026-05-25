@@ -92,7 +92,7 @@ class RowCache:
 
         if current_order == desired_order and current_order:
             # Hot path: same apps, same order. Mutate each row's labels.
-            # No container structural change — tooltips and hover states all
+            # No container structural change; tooltips and hover states all
             # survive the refresh.
             for app_id in desired_order:
                 self._cache[app_id].update(new_data_by_id[app_id])

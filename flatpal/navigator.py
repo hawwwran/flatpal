@@ -1,6 +1,6 @@
 """Tiny wraparound navigator for the fullscreen image viewer.
 
-Pure logic, no GTK — lives in its own module so it's easy to unit-test.
+Pure logic, no GTK; lives in its own module so it's easy to unit-test.
 """
 
 from __future__ import annotations

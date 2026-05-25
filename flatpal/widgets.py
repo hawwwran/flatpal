@@ -23,7 +23,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gtk  # noqa: E402
 
 
-# Brand palette is canonical in flatpal/palette.py — kept there as plain
+# Brand palette is canonical in flatpal/palette.py; kept there as plain
 # constants (no GTK dep) so tools/preview_flathub.py and any future style-
 # guide tooling can read the same source. Adding a new colour? Edit
 # palette.py and PALETTE_ENTRIES, then wire it into the CSS block below.
@@ -89,7 +89,7 @@ def clear_listbox(listbox: Gtk.ListBox) -> None:
 
 _PILL_CSS = (
     """
-    /* Brand palette as GTK named colours — the rules below reference
+    /* Brand palette as GTK named colours; the rules below reference
        them by name (e.g. @flatpal_purple) so the Flatpak release ships a
        single source of truth for every brand surface. Adding a new hex
        inline is a code-smell: add it here first and reference it via
@@ -137,7 +137,7 @@ _PILL_CSS = (
     }
 
     /* Detail-page "Update available" callout. Soft terracotta wash so the
-       box reads as the same family as the per-row Update pill above —
+       box reads as the same family as the per-row Update pill above;
        same hue, different weight. The 0.12 alpha on the background and
        0.35 on the border are matched against Adwaita's `.card`
        contrast budget so body text inside stays readable in both
@@ -227,7 +227,7 @@ def make_sort_pill(initial_label: str = "") -> Gtk.Label:
 
     The pill itself is a plain Gtk.Label so it stays visually quiet;
     `app.py` attaches a `Gtk.GestureClick` to it post-construction that
-    pops the existing top-left sort button — clicking the pill teaches
+    pops the existing top-left sort button; clicking the pill teaches
     the user where the sort menu lives without duplicating UI affordances.
     """
     install_pill_css()
@@ -301,7 +301,7 @@ def make_freeze_pill(
 
     `on_toggle(active: bool)` fires after the visual state has already
     updated. ToggleButton's native :checked pseudo-class plus our own
-    `flatpal-freeze-pill-on/off` classes both follow the active state — the
+    `flatpal-freeze-pill-on/off` classes both follow the active state; the
     pseudo-class catches GTK's default frame draw, our class wins on colour.
     """
     install_pill_css()

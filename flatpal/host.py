@@ -32,7 +32,7 @@ def host_cmd(
     item in `env` into a `--env=KEY=VAL` flag so the host command actually
     sees the variable. (Setting `env=` on the outer `subprocess.run` only
     affects the flatpak-spawn process itself, not the host command it
-    ultimately spawns — that's why a Python-side `LC_ALL=C` doesn't reach
+    ultimately spawns; that's why a Python-side `LC_ALL=C` doesn't reach
     a host `flatpak history`.)
 
     On the host: returns a copy of `cmd` unchanged; the caller is expected

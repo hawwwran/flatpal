@@ -51,12 +51,12 @@ def search_catalog(
     """Search the catalog for `query`, return up to `limit` rows.
 
     Empty query returns `[]` (the Explore tab shows a placeholder for that
-    state — the catalog has thousands of entries; an unfiltered page would
+    state; the catalog has thousands of entries and an unfiltered page would
     just be noise).
 
     Each returned dict is the catalog entry plus:
-      - `installed: bool` — true when the app is already installed locally
-      - `popularity` (only when `popularity_idx` is provided) — the index
+      - `installed: bool`, true when the app is already installed locally
+      - `popularity` (only when `popularity_idx` is provided), the index
         entry (`rank`, `installs_last_month`, …) or None for unranked apps.
 
     `sort_by="name"` sorts casefolded alphabetically. `sort_by="popularity"`

@@ -1,9 +1,9 @@
-"""Row widgets for the Running tab — one per running app.
+"""Row widgets for the Running tab: one per running app.
 
 `RunningRow` is a single-sandbox row; `RunningExpanderRow` is a multi-sandbox
 row that exposes its per-sandbox breakdown when expanded. Both implement
 `.update(row)` so the parent page can refresh stats in place without
-replacing the widget — which keeps in-flight hover tooltips alive across
+replacing the widget, keeping in-flight hover tooltips alive across
 the 2 s refresh tick. See `flatpal.row_cache.RowCache` for the differ that
 orchestrates these updates.
 """
@@ -34,7 +34,7 @@ def _build_app_icon(display, app_id: str) -> Gtk.Image:
 def _build_stats_box(
     cpu_percent: float, memory_bytes: int,
 ) -> tuple[Gtk.Box, Gtk.Label, Gtk.Label]:
-    """Stacked CPU + memory labels — returns (box, cpu_label, mem_label).
+    """Stacked CPU + memory labels; returns (box, cpu_label, mem_label).
 
     Callers hold onto the label refs so they can mutate them in place on the
     next sample, instead of throwing the whole row away. Keeping widgets alive
@@ -77,7 +77,7 @@ def _app_subtitle(row: dict) -> str:
     count = row.get("instances", 1)
     if count > 1:
         # "sandboxes" makes it explicit that this counts independent flatpak
-        # sandbox processes — not windows. Single-instance GTK apps (most of
+        # sandbox processes, not windows. Single-instance GTK apps (most of
         # them) keep all their windows in one sandbox no matter how many.
         bits.append(f"{count} sandboxes")
     return GLib.markup_escape_text(" • ".join(bits))
@@ -264,7 +264,7 @@ class RunningExpanderRow(Adw.ExpanderRow):
         self.add_suffix(open_btn)
         self.add_suffix(stats_box)
         # Adw.ExpanderRow.add_suffix *prepends*, so this Update pill ends
-        # up leftmost in the suffix area — same visual order as RunningRow:
+        # up leftmost in the suffix area; same visual order as RunningRow:
         # [update] [stats] [arrow] [chevron].
         if update_info:
             installed = installed_lookup(row["id"]) if installed_lookup else None
@@ -292,7 +292,7 @@ class RunningExpanderRow(Adw.ExpanderRow):
 
         # Sub-row diff: update existing by PID, append new ones, remove
         # vanished ones. Sub-instances are sorted by started_at in
-        # running.py, so newly-arrived sandboxes naturally end up last —
+        # running.py, so newly-arrived sandboxes naturally end up last:
         # which is also where add_row puts them.
         new_subs = row.get("sub_instances", [])
         new_pids = {s["pid"] for s in new_subs}

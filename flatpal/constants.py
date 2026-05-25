@@ -31,5 +31,5 @@ REFRESH_MS = 2000
 
 # Soft cap on the on-disk screenshot cache. Older files are evicted by mtime
 # until the remaining set fits. ~200 MB is enough for ~200 screenshots of
-# 1 MB each — well over what a normal browse session generates.
+# 1 MB each, well over what a normal browse session generates.
 SCREENSHOT_CACHE_MAX_BYTES = 200 * 1024 * 1024

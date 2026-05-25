@@ -68,7 +68,7 @@ class NoEnumerateCheck:
             return
 
         if self._was_dismissed:
-            # Issue still present but user chose silence — respect it.
+            # Issue still present but user chose silence; respect it.
             return
 
         def show() -> bool:
@@ -110,7 +110,7 @@ class NoEnumerateCheck:
         if response == "fix":
             self._fix_remotes(affected)
         else:
-            # "close" (button) or default close-response (Esc) — both mean
+            # "close" (button) or default close-response (Esc); both mean
             # "the user actively chose not to fix", so persist the suppression.
             self._on_dismissed_change(True)
 

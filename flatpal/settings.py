@@ -2,7 +2,7 @@
 
 A small dict round-tripped through `$XDG_CONFIG_HOME/flatpal/settings.json`
 (== `~/.config/flatpal/settings.json` when the variable isn't set). Pure
-helpers — no GTK, easily tested. Failures are silent: missing/corrupt files
+helpers; no GTK, easily tested. Failures are silent: missing/corrupt files
 yield defaults, write errors are swallowed (a missing setting beats a
 crashed app).
 
@@ -50,7 +50,7 @@ DEFAULTS: Dict[str, Any] = {
     "show_popular": True,
     # Set to True once the user clicks "Close warning" on the startup dialog
     # that flags installed apps whose origin remote has the bundle-install
-    # no-enumerate quirk. Suppresses only the startup dialog — the per-app
+    # no-enumerate quirk. Suppresses only the startup dialog; the per-app
     # warning card in the detail view still appears.
     "no_enumerate_warning_dismissed": False,
 }

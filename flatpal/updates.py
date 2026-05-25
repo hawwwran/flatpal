@@ -18,7 +18,7 @@ from typing import Callable, Optional
 from .host import host_cmd
 
 
-# Order has to match `_parse` below — we pin the column list so a future
+# Order has to match `_parse` below; we pin the column list so a future
 # libflatpak default change can't shift columns under us.
 _COLUMNS = "application,version,branch,origin,commit"
 
@@ -76,7 +76,7 @@ def _parse(text: str) -> dict:
         if not app_id or app_id.lower() == "application":
             continue
         # If both system and user installs have updates, the same app_id
-        # shows up twice with identical version/origin — keep the first.
+        # shows up twice with identical version/origin; keep the first.
         if app_id in out:
             continue
         out[app_id] = {
@@ -92,7 +92,7 @@ def releases_since(releases: list, installed_version: str) -> list:
     """Slice `releases` (newest-first, from AppStream metainfo) to those that
     landed strictly after `installed_version`.
 
-    String comparison rather than semver parsing — AppStream versions are
+    String comparison rather than semver parsing; AppStream versions are
     free-form (1.2.3, 2025.05, v0.1.1, …) and the metainfo entries are
     already sorted by the upstream. We stop at the first entry that
     matches `installed_version`; everything before it (newer in the list,

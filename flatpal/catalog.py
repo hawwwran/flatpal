@@ -2,7 +2,7 @@
 
 Parses the aggregated `appstream.xml.gz` shipped by Flatpak into a dict keyed
 by app-id. Reuses `metainfo.parse_component` so catalog entries have the same
-shape as installed-app metainfo dicts — only an extra `cached_icon` path is
+shape as installed-app metainfo dicts; only an extra `cached_icon` path is
 added (pointing at the icon Flatpak already extracted to disk).
 """
 
@@ -81,7 +81,7 @@ def parse_catalog(
     `source` may be:
       - a `str` of XML text (tests, smaller inputs), or
       - a file-like object (production: a `gzip.open` stream of the on-disk
-        catalog — ~50 MB decompressed).
+        catalog, ~50 MB decompressed).
 
     We use `ET.iterparse` with `elem.clear()` after each `<component>` so the
     peak memory stays in the low MBs even for the full Flathub catalog,
@@ -146,7 +146,7 @@ def load_catalog(
     for target in candidates:
         try:
             # Stream the gzip output straight into iterparse so peak memory
-            # stays bounded — the full catalog is ~50 MB decompressed.
+            # stays bounded; the full catalog is ~50 MB decompressed.
             with gzip.open(target, "rb") as f:
                 parsed = parse_catalog(f, lang=lang)
             break

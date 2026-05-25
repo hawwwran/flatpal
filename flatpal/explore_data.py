@@ -1,4 +1,4 @@
-"""Data layer for the Explore tab — catalog + popularity loading."""
+"""Data layer for the Explore tab: catalog + popularity loading."""
 
 from __future__ import annotations
 

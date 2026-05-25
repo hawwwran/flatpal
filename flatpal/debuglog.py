@@ -1,6 +1,6 @@
 """Tiny file-based debug log, opt-in via `FLATPAL_DEBUG=1`.
 
-Plain stdout doesn't help once Flatpal is launched from GNOME Shell — the
+Plain stdout doesn't help once Flatpal is launched from GNOME Shell; the
 journal may not capture it and there's no terminal attached. When opted in,
 logging goes to `$XDG_STATE_HOME/flatpal/debug.log` which works regardless of
 how the app was started and survives across launches; inside the Flatpak
@@ -10,7 +10,7 @@ which the host can read directly.
 Off by default: the catalog parse path emits thousands of DEBUG records per
 Explore-tab load and every record is an `fsync`'d write through
 `RotatingFileHandler`, which adds noticeable latency on slow disks. Enable
-with `FLATPAL_DEBUG=1` when actually debugging — e.g.
+with `FLATPAL_DEBUG=1` when actually debugging, e.g.
 
     FLATPAL_DEBUG=1 flatpak run io.github.hawwwran.flatpal
 """

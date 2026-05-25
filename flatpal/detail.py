@@ -59,7 +59,7 @@ def _link_row(title: str, url: str) -> Adw.ActionRow:
     """Adw.ActionRow showing a URL with a trailing open-in-browser button.
 
     Clicking the row body or the button both open the URL via xdg-open. Both
-    title and url are run through markup_escape_text — URLs frequently carry
+    title and url are run through markup_escape_text; URLs frequently carry
     `&` in query strings, which would otherwise produce invalid Pango markup
     and a blank subtitle.
     """
@@ -112,7 +112,7 @@ class DetailPage(Adw.NavigationPage):
 
         `catalog_lookup(app_id) -> dict | None` overrides the locally-
         installed metainfo's release list with the Flathub catalog's view
-        when available — the catalog reflects the remote's current state
+        when available; the catalog reflects the remote's current state
         so the "What's new since {installed}" body picks up releases that
         landed after the local install. Race: the catalog loads from a
         background worker (~1 s of local IO); a detail page opened within
@@ -120,7 +120,7 @@ class DetailPage(Adw.NavigationPage):
         box still surfaces the version diff, just without the body.
 
         `updates_lookup(app_id) -> dict | None` provides the per-app update
-        record from the startup background fetch — used to populate the
+        record from the startup background fetch; used to populate the
         update card under the hero.
         """
         meta = load_metainfo(app["id"], lang=system_lang())
@@ -144,7 +144,7 @@ class DetailPage(Adw.NavigationPage):
 
         `entry` comes from `catalog.load_catalog()` and has the same shape as
         `metainfo.parse_metainfo()` output plus a `cached_icon` path. The
-        synthesised `app` dict has only `id` and `name` populated — the
+        synthesised `app` dict has only `id` and `name` populated; the
         installed-only fields (version, size, …) stay empty and the About
         group hides them.
         """
@@ -449,7 +449,7 @@ class DetailPage(Adw.NavigationPage):
 
         if self.installed:
             # Verbose version line surfaces both sides of an update at the
-            # canonical About location — useful even for users who scroll
+            # canonical About location; useful even for users who scroll
             # past the top-of-page update box. The row's title flips from
             # the bare "Version" to "Version (update available)" so it's
             # scannable in a list of plain rows.

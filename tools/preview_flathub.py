@@ -38,7 +38,7 @@ except ImportError:
     yaml = None  # type: ignore
 
 
-# Known lint findings — each maps to (kind, explanation). The render layer
+# Known lint findings: each maps to (kind, explanation). The render layer
 # uses `kind` to colour-code and group the issues; the explanation tells the
 # maintainer why the lint is happening and what (if anything) to do.
 #
@@ -47,8 +47,8 @@ except ImportError:
 #   justify-in-pr   : a Flathub-flagged permission that is required for the
 #                     app to function; reviewer will accept with rationale in
 #                     the submission/update PR description.
-#   informational   : present in output but doesn't block — desktop-file
-#                     hints, AppStream notices, etc.
+#   informational   : present in output but doesn't block (desktop-file
+#                     hints, AppStream notices, etc.).
 LINT_CLASSIFICATIONS: dict = {
     "screenshot-image-not-found": (
         "resolves-at-tag",
@@ -67,17 +67,17 @@ LINT_CLASSIFICATIONS: dict = {
     "finish-args-flatpak-spawn-access": (
         "justify-in-pr",
         "Required: app spawns host flatpak via flatpak-spawn (its whole "
-        "purpose). Flatseal precedent — justify in the PR description.",
+        "purpose). Same precedent as Flatseal; justify in PR.",
     ),
     "finish-args-flatpak-system-folder-ro-access": (
         "justify-in-pr",
         "Required: read host AppStream cache + per-app metainfo XML from "
-        "/var/lib/flatpak. Flatseal precedent — justify in the PR description.",
+        "/var/lib/flatpak. Same precedent as Flatseal; justify in PR.",
     ),
     "finish-args-unnecessary-xdg-data-flatpak-ro-access": (
         "justify-in-pr",
         "Required: same as system-folder above but for the per-user install "
-        "at xdg-data/flatpak. Flatseal precedent — justify in the PR.",
+        "at xdg-data/flatpak. Same precedent as Flatseal; justify in PR.",
     ),
     "module-flatpal-source-git-no-commit-with-tag": (
         "resolves-at-tag",
@@ -95,7 +95,7 @@ def _classify_validation(name: str, raw: str, rc: int) -> tuple[str, list[dict],
 
     - overall_class: "ok" (nothing to worry about), "expected" (all findings
       are in LINT_CLASSIFICATIONS), or "attention" (at least one unknown
-      finding — needs human eyes).
+      finding, needs human eyes).
     - known_issues: list of {id, kind, explanation} for findings we recognise.
     - unknown_findings: list of finding identifiers we don't have a
       classification for. Surfacing them prompts an update to
@@ -847,7 +847,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
                 issue_rows.append(
                     f'<li class="lint-issue attention">'
                     f'<code class="lint-id">{escape(ident)}</code>'
-                    f'<span class="lint-expl">Unknown lint — investigate, '
+                    f'<span class="lint-expl">Unknown lint; investigate '
                     f'and add to LINT_CLASSIFICATIONS in tools/preview_flathub.py '
                     f'so future runs categorise it.</span>'
                     f'</li>'
@@ -915,7 +915,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         for c in info["branding"]
     )
 
-    # Full Flatpal theme palette — read from flatpal/palette.py so this
+    # Full Flatpal theme palette: read from flatpal/palette.py so this
     # card stays in sync with the CSS provider that ships in the app.
     # AppStream's <branding> only carries the primary light/dark pair;
     # this block surfaces the rest (Mint Teal, Freeze Blue, …) that the
@@ -974,7 +974,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
 
     title = escape(info["name"] or "metainfo preview")
 
-    # Desktop entry card — every key shown verbatim, with Categories /
+    # Desktop entry card: every key shown verbatim, with Categories /
     # Keywords lifted out as tag pills for parity with the metainfo card.
     if desktop:
         desktop_categories = [c for c in desktop.get("Categories", "").split(";") if c]
@@ -1001,7 +1001,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
     else:
         desktop_card = ""
 
-    # Flatpak manifest card — top-level meta, finish-args (each with a small
+    # Flatpak manifest card: top-level meta, finish-args (each with a small
     # explanation from the standard set), and modules with their source pinning.
     if manifest:
         finish_args = manifest.get("finish-args", []) or []
@@ -1023,14 +1023,14 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         manifest_card = (
             '<section class="card"><h2>Flatpak manifest</h2>'
             '<p style="color:var(--muted);margin:0">'
-            'PyYAML is not installed — install <code>python3-yaml</code> '
+            'PyYAML is not installed; install <code>python3-yaml</code> '
             '(Debian/Ubuntu) or <code>pip install pyyaml</code> to render '
             'this card.</p></section>'
         )
     else:
         manifest_card = ""
 
-    # Dev-manifest card — same shape as the canonical manifest but tighter,
+    # Dev-manifest card: same shape as the canonical manifest but tighter,
     # because the only thing that differs is the source override (type: dir
     # instead of type: git). Surfaced so the maintainer can sanity-check the
     # local-build setup at a glance.
@@ -1043,7 +1043,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
             f'<p style="margin:0 0 12px;color:var(--muted);font-size:0.9rem">'
             f'Used by <code>release-flatpal.sh</code> Mode 1 and §9 lint runs. '
             f'Same finish-args as the canonical manifest above; only the source '
-            f'differs — <code>type: dir, path: .</code> so flatpak-builder copies '
+            f'differs: <code>type: dir, path: .</code> so flatpak-builder copies '
             f'the working tree instead of cloning a tag.</p>'
             f'<table class="kv">{_render_manifest_top(dev_manifest)}</table>'
             f'<h2 class="section-sub">Modules ({len(dev_modules)})</h2>'
@@ -1052,7 +1052,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
     else:
         dev_manifest_card = ""
 
-    # LICENSE card — title, line count, file size, head excerpt.
+    # LICENSE card: title, line count, file size, head excerpt.
     if license_info:
         head_html = "".join(
             f'<div>{escape(line)}</div>' for line in license_info.get("head", [])
@@ -1079,7 +1079,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
     return (
         "<!DOCTYPE html>\n"
         f'<html lang="en"><head><meta charset="utf-8">'
-        f"<title>{title} — Flathub release preview</title>"
+        f"<title>{title} | Flathub release preview</title>"
         f"<style>{css}</style></head><body>"
         f'<div class="container">'
         f'<div class="banners">{banners_html}</div>'
@@ -1108,11 +1108,11 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         f'<section class="card"><h2>Brand colors</h2>'
         f'<h2 class="section-sub">AppStream &lt;branding&gt; '
         f'<span style="font-weight:400;color:var(--muted);font-size:0.85rem">'
-        f'— primary, light + dark variants</span></h2>'
+        f'(primary, light + dark variants)</span></h2>'
         f'<div class="branding">{branding_html}</div>'
         f'<h2 class="section-sub">Theme palette '
         f'<span style="font-weight:400;color:var(--muted);font-size:0.85rem">'
-        f'— flatpal/palette.py</span></h2>'
+        f'(flatpal/palette.py)</span></h2>'
         f'<div class="branding">{palette_html}</div></section>'
         + (
             f'<section class="card"><h2>Releases ({len(info["releases"])})</h2>'
@@ -1120,7 +1120,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
             if info["releases"]
             else
             f'<section class="card"><h2>Releases</h2>'
-            f'<p style="margin:0;color:var(--muted)">No releases yet — the '
+            f'<p style="margin:0;color:var(--muted)">No releases yet; the '
             f'<code>&lt;releases&gt;</code> block in the metainfo is empty. '
             f'<code>release-flatpal.sh</code> prepends a <code>&lt;release&gt;</code> '
             f'entry to the metainfo for each tagged release.</p></section>'
@@ -1176,7 +1176,7 @@ def _render_manifest_modules(modules: list) -> str:
 
 _FINISH_ARG_NOTES = {
     "--share=ipc": "X11 shared-memory + general IPC",
-    "--share=network": "outbound HTTPS — popularity API, screenshot CDN",
+    "--share=network": "outbound HTTPS: popularity API, screenshot CDN",
     "--socket=wayland": "Wayland display",
     "--socket=fallback-x11": "X11 fallback for non-Wayland sessions",
     "--socket=x11": "X11 display",
@@ -1184,7 +1184,7 @@ _FINISH_ARG_NOTES = {
     "--device=all": "all host devices",
     "--filesystem=/var/lib/flatpak:ro": "host's system Flatpak install (icons / AppStream / metainfo, read-only)",
     "--filesystem=xdg-data/flatpak:ro": "host's user Flatpak install, read-only",
-    "--filesystem=host": "entire host filesystem (avoid — reviewers push back)",
+    "--filesystem=host": "entire host filesystem (avoid; reviewers push back)",
     "--talk-name=org.freedesktop.Flatpak": "host flatpak via flatpak-spawn --host",
     "--talk-name=org.gnome.Software": "GNOME Software for Open-in-Software action",
 }
@@ -1209,9 +1209,9 @@ def run_validators() -> list[tuple[str, str, int]]:
         text = (r.stdout + r.stderr).strip() or "OK"
         out.append(("AppStream metainfo  (appstreamcli validate)", text, r.returncode))
     except FileNotFoundError:
-        out.append(("AppStream metainfo", "appstreamcli not installed — skipping", -1))
+        out.append(("AppStream metainfo", "appstreamcli not installed; skipping", -1))
     except subprocess.TimeoutExpired:
-        out.append(("AppStream metainfo", "timed out (>60s — network reachability)", -1))
+        out.append(("AppStream metainfo", "timed out (>60s, network reachability)", -1))
 
     # Desktop entry.
     try:
@@ -1222,7 +1222,7 @@ def run_validators() -> list[tuple[str, str, int]]:
         text = (r.stdout + r.stderr).strip() or "OK"
         out.append(("Desktop entry  (desktop-file-validate)", text, r.returncode))
     except FileNotFoundError:
-        out.append(("Desktop entry", "desktop-file-validate not installed — skipping", -1))
+        out.append(("Desktop entry", "desktop-file-validate not installed; skipping", -1))
 
     # Flatpak manifest. flatpak-builder-lint lives inside org.flatpak.Builder
     # (`flatpak install --user flathub org.flatpak.Builder`). If installed,
@@ -1246,13 +1246,13 @@ def run_validators() -> list[tuple[str, str, int]]:
                 ("Flatpak manifest  (flatpak-builder-lint manifest)", text, r.returncode)
             )
         except FileNotFoundError:
-            out.append(("Flatpak manifest", "flatpak CLI not on PATH — skipping", -1))
+            out.append(("Flatpak manifest", "flatpak CLI not on PATH; skipping", -1))
         except subprocess.TimeoutExpired:
             out.append(("Flatpak manifest", "timed out (>60s)", -1))
     else:
         out.append((
             "Flatpak manifest",
-            "org.flatpak.Builder not installed — run "
+            "org.flatpak.Builder not installed; run "
             "`flatpak install --user -y flathub org.flatpak.Builder` to enable "
             "the manifest lint here.",
             2,

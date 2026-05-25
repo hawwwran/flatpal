@@ -1,4 +1,4 @@
-"""Pure helpers — no GTK imports, safe to load in any environment.
+"""Pure helpers: no GTK imports, safe to load in any environment.
 
 Everything Flatpal displays comes from one of these functions, so this is
 also the testable surface.
@@ -50,8 +50,8 @@ def parse_history_time(text: str, now: Optional[datetime] = None) -> Optional[da
     """Parse the locale-independent time column from `flatpak history` (LC_ALL=C).
 
     Two shapes occur in the wild:
-      'Apr 22 17:03:17' — within ~6 months, no year (year=current; if future, -1)
-      'Apr 22 2024'    — older entries, with year, no time
+      'Apr 22 17:03:17': within ~6 months, no year (year=current; if future, -1)
+      'Apr 22 2024':    older entries, with year, no time
 
     Returns None for anything we don't recognise.
     """
@@ -185,7 +185,7 @@ def fetch_remote_options() -> dict:
 
     `scope` is "system" or "user" (matching what `flatpak list --columns=installation`
     reports for the corresponding installed apps). `options` is the set parsed
-    from the `options` column with the scope token stripped — typically
+    from the `options` column with the scope token stripped; typically
     something like {"no-enumerate"} or empty.
 
     Used to detect the bundle-install quirk where the auto-created remote has
@@ -218,7 +218,7 @@ def fix_remote_no_enumerate(remote: str, scope: str) -> tuple:
         `--appstream` refresh is best-effort: it makes GNOME Software see
         the app immediately, but a slow or failing refresh doesn't roll
         back the flag (which is already cleared at that point).
-      - `(False, msg)` if `remote-modify` fails — `msg` is the captured
+      - `(False, msg)` if `remote-modify` fails; `msg` is the captured
         stderr, or the exception text when the binary is missing or times
         out.
 

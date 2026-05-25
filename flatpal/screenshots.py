@@ -1,4 +1,4 @@
-"""Detail-page screenshot strip — thumbnails + lazy download + fullscreen glue."""
+"""Detail-page screenshot strip: thumbnails + lazy download + fullscreen glue."""
 
 from __future__ import annotations
 

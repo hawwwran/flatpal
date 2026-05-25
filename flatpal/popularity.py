@@ -1,6 +1,6 @@
 """Fetch + cache Flathub popularity rankings.
 
-Top-1000 most-installed apps from Flathub's `/api/v2/collection/popular` —
+Top-1000 most-installed apps from Flathub's `/api/v2/collection/popular`,
 fetched as four parallel 250-item pages so the slowest page caps wall-clock
 time. Optional `on_progress` callback fires per page so the UI can render
 progressively. Cached to disk with a 24-hour TTL; on network failure we fall
@@ -80,8 +80,8 @@ def fetch_popular(
     """Fetch the top `per_page * pages` apps in parallel.
 
     Returns `(hits, complete)`:
-      - `hits` — combined, sorted list of all pages that succeeded.
-      - `complete` — True iff *every* page succeeded. Partial successes return
+      - `hits`: combined, sorted list of all pages that succeeded.
+      - `complete`: True iff *every* page succeeded. Partial successes return
         what they have with `complete=False` so the caller can avoid poisoning
         a persistent cache with an incomplete dataset.
 
@@ -156,7 +156,7 @@ def load_popular(
 
     The fetcher may return either:
       - a `(hits, complete)` tuple (current `fetch_popular`), OR
-      - a plain `list` of hits (legacy / test stubs — treated as complete).
+      - a plain `list` of hits (legacy / test stubs, treated as complete).
 
     Partial fetches (`complete=False`) are returned to the caller but NOT
     written to the cache: a half-loaded snapshot shouldn't suppress a retry

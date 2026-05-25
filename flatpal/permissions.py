@@ -1,7 +1,7 @@
 """Parse `flatpak info -m <id>` output and summarise sandbox permissions.
 
 We hand-roll the INI parser because real flatpak metadata can contain duplicate
-section headers like `[Extension foo]` and `[Extension bar]` — configparser
+section headers like `[Extension foo]` and `[Extension bar]`; configparser
 allows duplicates only in narrow modes and complicates the API. A flat
 hand-rolled parser is easier to reason about and to test.
 """

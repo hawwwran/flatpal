@@ -36,7 +36,7 @@ def build_update_box(app: dict, meta: dict, update_info: dict) -> Gtk.Widget:
     diff.add_css_class("heading")
     outer.append(diff)
 
-    # "What's new since v0.1.0" — release notes slice from the metainfo
+    # "What's new since v0.1.0": release notes slice from the metainfo
     # for everything that landed after the installed version. Empty
     # `releases_since` (no release tags, or installed == latest known)
     # falls through to the "release notes unavailable" branch below so
@@ -70,7 +70,7 @@ def build_update_box(app: dict, meta: dict, update_info: dict) -> Gtk.Widget:
                 body.add_css_class("body")
                 outer.append(body)
     else:
-        # No body to show: either current is "?" (rare — flatpak list
+        # No body to show: either current is "?" (rare; flatpak list
         # didn't report a version) or the metainfo's release list
         # doesn't extend past the installed version (catalog may lag
         # behind the remote, or upstream tags but doesn't update

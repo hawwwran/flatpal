@@ -24,7 +24,7 @@ def _default_cache_dir() -> Path:
     raw host (`./install.sh` dev mode) it's typically unset so we fall back
     to `~/.cache`. Hardcoding `~/.cache` worked in dev but inside the
     sandbox writes land in an ephemeral overlay over a non-existent
-    `~/.cache` and never persist — so downloaded screenshots got re-fetched
+    `~/.cache` and never persist; downloaded screenshots got re-fetched
     every detail-page visit and stale-cache cleanup did nothing.
     """
     base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
@@ -74,7 +74,7 @@ def download_screenshot(
 
     Uses a temp file in the same directory and `os.replace` for atomicity.
     Critically, the destination directory is created **only after** the
-    response is validated — so a rejected download doesn't leave behind an
+    response is validated, so a rejected download doesn't leave behind an
     empty `~/.cache/flatpal/screenshots/<app-id>/` shell to be cleaned up later.
     """
     from . import __version__ as _ver  # local import keeps cache.py free of circulars
@@ -124,7 +124,7 @@ def prune_cache(max_total_bytes: int, root: Optional[Path] = None) -> int:
 
     Returns the number of bytes removed. Files are deleted oldest-first; the
     parent app-id directories are removed when they're left empty. Safe to
-    call on a missing cache (does nothing). Errors are swallowed — the cache
+    call on a missing cache (does nothing). Errors are swallowed; the cache
     is best-effort and we'd rather grow than crash the app.
     """
     cache_root = root if root is not None else CACHE_DIR
