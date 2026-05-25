@@ -18,7 +18,7 @@ XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 
 URL_KEYS = ("homepage", "bugtracker", "donation", "help", "vcs-browser", "contribute", "contact")
 
-# Env vars consulted in priority order — same chain GNU gettext uses. We can't
+# Env vars consulted in priority order; same chain GNU gettext uses. We can't
 # rely on `locale.getlocale(LC_MESSAGES)` because Python initialises the locale
 # to "C" until `setlocale(LC_ALL, "")` is called, which Flatpal never does;
 # without this helper every install ran with `lang=None`, so any metainfo whose
@@ -36,7 +36,7 @@ def system_lang() -> Optional[str]:
     ("en_US.UTF-8") and modifiers ("de_DE@euro") are stripped so the result
     matches the shape of AppStream `xml:lang`.
 
-    NB: GNU gettext's actual rule is more nuanced — it consults `LANGUAGE`
+    NB: GNU gettext's actual rule is more nuanced; it consults `LANGUAGE`
     only when one of `LC_ALL`/`LC_MESSAGES`/`LANG` resolves to a non-`C`
     locale (i.e. translation is enabled). Here `LANGUAGE` always wins when
     set, which matches what most users intend ("`LANGUAGE=cs` should pick
@@ -58,7 +58,7 @@ def system_lang() -> Optional[str]:
 
 # Collapse internal whitespace runs in `<p>`/`<li>` text. AppStream metainfo
 # frequently wraps paragraph content across multiple indented source lines
-# (see GIMP / Audacity fixtures) — without normalising, Gtk.Label preserves
+# (see GIMP / Audacity fixtures); without normalising, Gtk.Label preserves
 # the source newlines and the continuation lines look indented inward.
 _WHITESPACE_RUN = re.compile(r"\s+")
 
@@ -128,7 +128,7 @@ def _pick_localised_element(
     Unlike `_pick_localised` (which returns text), this returns the actual
     Element so callers can still walk its children. AppStream sometimes
     emits one whole `<description xml:lang="cs">` block per language at the
-    top level (alongside an untagged English one) — without picking among
+    top level (alongside an untagged English one); without picking among
     them first, `parent.find(tag)` always returned source-order index 0,
     which for the Flathub aggregated catalog frequently isn't English.
 
@@ -177,7 +177,7 @@ def _pick_localised_blocks(
     within-its-own-lang), then pick the best-scoring lang per bucket. The
     Resources metainfo uses style (b) for its feature list, which is why
     callers need to apply this helper inside `<ul>`/`<ol>` as well as at
-    the top level of `<description>` — otherwise the `<li>` translations
+    the top level of `<description>`; otherwise the `<li>` translations
     all render side-by-side.
 
     Empty candidates (no children and no stripped text) are skipped during
@@ -292,7 +292,7 @@ def _screenshots(root: ET.Element) -> list:
         if not chosen_url:
             continue
         # Caption: prefer untagged (English baseline); we don't localise captions
-        # for now — they're typically descriptive enough in English.
+        # for now; they're typically descriptive enough in English.
         caption_el = shot.find("caption")
         caption = (caption_el.text or "").strip() if caption_el is not None else ""
         out.append({
@@ -360,7 +360,7 @@ def parse_component(root: ET.Element, lang: Optional[str] = None) -> dict:
 def parse_metainfo(xml_text: str, lang: Optional[str] = None) -> dict:
     """Parse AppStream metainfo XML into a flat dict.
 
-    `lang` is a posix locale string like 'cs_CZ' — used to prefer matching
+    `lang` is a posix locale string like 'cs_CZ', used to prefer matching
     xml:lang variants of `<summary>`, `<description>`, `<developer_name>`,
     `<developer><name>`. Untagged elements (English) are the fallback.
     """
@@ -390,7 +390,7 @@ def load_metainfo(app_id: str, lang: Optional[str] = None) -> dict:
     """Read + parse metainfo for an installed app. Returns empty dict if missing.
 
     Catches both filesystem (`OSError`) and decoding errors
-    (`UnicodeDecodeError`/`ValueError`) — a corrupt metainfo file should
+    (`UnicodeDecodeError`/`ValueError`); a corrupt metainfo file should
     degrade the detail page, not crash it.
     """
     path = find_metainfo_path(app_id)
