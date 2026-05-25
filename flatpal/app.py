@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import threading
 
@@ -16,10 +15,9 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 from . import settings as user_settings
 from .cache import prune_cache
 from .constants import SCREENSHOT_CACHE_MAX_BYTES
-from .core import fetch_apps, fetch_remote_options
+from .core import fetch_apps, fetch_remote_options, fix_remote_no_enumerate
 from .detail import DetailPage
 from .explore_page import ExplorePage
-from .host import host_cmd
 from .installed_page import InstalledPage
 from .running_page import RunningPage
 from .updates import fetch_updates
@@ -217,42 +215,19 @@ class FlatpalWindow(Adw.ApplicationWindow):
             self._save_setting("no_enumerate_warning_dismissed", True)
 
     def _fix_no_enumerate_remotes(self, remotes: set) -> None:
-        """Run remote-modify + appstream refresh on every affected remote.
+        """Clear no-enumerate on every affected remote (one polkit prompt
+        per --system invocation; --user invocations skip it).
 
-        Per-remote: only the `remote-modify` is critical (it's the actual fix);
-        the `update --appstream` is a nice-to-have for immediate Software
-        catalog visibility, so its failures stay silent. A `remote-modify`
-        failure is captured and surfaced via a follow-up dialog — that's the
-        bug-class that bit us once with `--no-no-enumerate`.
-
-        polkit prompts once per --system invocation; --user invocations skip it.
+        Per-remote failures from `fix_remote_no_enumerate` are collected and
+        surfaced via a follow-up dialog so the user knows the startup
+        warning will reappear on the next launch.
         """
         def worker():
             failures: list = []
             for remote, scope in remotes:
-                scope_flag = f"--{scope}"
-                try:
-                    r = subprocess.run(
-                        host_cmd(
-                            ["flatpak", "remote-modify", scope_flag,
-                             "--enumerate", remote]
-                        ),
-                        capture_output=True, text=True, timeout=30,
-                    )
-                    if r.returncode != 0:
-                        failures.append(
-                            (remote, scope, r.stderr.strip() or "unknown error")
-                        )
-                        continue
-                    subprocess.run(
-                        host_cmd(
-                            ["flatpak", "update", scope_flag,
-                             "--appstream", remote]
-                        ),
-                        capture_output=True, text=True, timeout=60,
-                    )
-                except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-                    failures.append((remote, scope, str(exc)))
+                ok, err = fix_remote_no_enumerate(remote, scope)
+                if not ok:
+                    failures.append((remote, scope, err))
 
             if failures:
                 def show_failure():

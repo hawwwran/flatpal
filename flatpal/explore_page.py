@@ -16,13 +16,14 @@ from .explore_data import CatalogManager
 from .popularity import format_install_count
 from .search import popular_shelf, search_catalog
 from .widgets import (
-    make_installed_pill, make_sort_pill, make_update_pill, update_tooltip,
+    clear_listbox,
+    make_installed_pill,
+    make_list_clamp,
+    make_sort_pill,
+    make_status_label,
+    make_update_pill,
+    update_tooltip,
 )
-
-
-# Lock search bar, status row and listboxes to the same width so the input
-# visually lines up with the list rows below it.
-LIST_MAX_WIDTH = 900
 
 
 class ExploreRow(Adw.ActionRow):
@@ -133,11 +134,7 @@ class ExplorePage(Gtk.Box):
         status_row.set_margin_start(12)
         status_row.set_margin_end(12)
 
-        self.status_label = Gtk.Label()
-        self.status_label.add_css_class("dim-label")
-        self.status_label.add_css_class("caption")
-        self.status_label.set_halign(Gtk.Align.START)
-        self.status_label.set_xalign(0.0)
+        self.status_label = make_status_label()
 
         # Brand-purple sort pill shared with Running/Installed tabs.
         self.sort_pill = make_sort_pill()
@@ -237,30 +234,14 @@ class ExplorePage(Gtk.Box):
         # while the loading widget is off-screen.
         self.stack.connect("notify::visible-child-name", self._on_stack_changed)
 
-        # Single outer Adw.Clamp wrapping search_bar + status_row + stack so
-        # they all share the exact same 900px width allocation and the row
-        # cards line up pixel-perfect with the search bar and status text.
-        #
-        # Two settings keep the width purely a function of *window* size,
-        # never of inner content:
-        #   • hexpand=True propagates up so the ViewStack → ToolbarView →
-        #     window chain allocates the clamp the full window width.
-        #   • tightening_threshold == maximum_size flattens AdwClamp's default
-        #     cubic-ease window (400..~1150 px) into a hard `min(for_size,
-        #     max)`. Without this, content-driven jitter in the clamp's
-        #     allocation rides the easing curve and the search bar visibly
-        #     shifts a few pixels when the stack or status text changes.
+        # Single outer clamp wrapping search_bar + status_row + stack so
+        # they all share the same width allocation and the row cards line up
+        # pixel-perfect with the search bar and status text above.
         outer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer_box.append(self.search_bar)
         outer_box.append(status_row)
         outer_box.append(self.stack)
-        outer_clamp = Adw.Clamp()
-        outer_clamp.set_maximum_size(LIST_MAX_WIDTH)
-        outer_clamp.set_tightening_threshold(LIST_MAX_WIDTH)
-        outer_clamp.set_child(outer_box)
-        outer_clamp.set_vexpand(True)
-        outer_clamp.set_hexpand(True)
-        self.append(outer_clamp)
+        self.append(make_list_clamp(outer_box, vexpand=True))
 
     def _on_stack_changed(self, *_):
         if self.stack.get_visible_child_name() == "loading":
@@ -397,13 +378,6 @@ class ExplorePage(Gtk.Box):
         if hasattr(row, "entry"):
             self._on_row_activated(row.entry)
 
-    def _clear(self, listbox):
-        child = listbox.get_first_child()
-        while child is not None:
-            nxt = child.get_next_sibling()
-            listbox.remove(child)
-            child = nxt
-
     def refresh(self):
         """Re-render against current state (catalog/popularity/installed IDs).
 
@@ -438,7 +412,7 @@ class ExplorePage(Gtk.Box):
         self._all_search_results = all_results
         visible = all_results[: self._search_limit]
 
-        self._clear(self.listbox)
+        clear_listbox(self.listbox)
         for entry in visible:
             self.listbox.append(ExploreRow(
                 entry, update_info=self._updates_lookup(entry["id"]),
@@ -493,7 +467,7 @@ class ExplorePage(Gtk.Box):
             self._popular_results = all_rows
             visible = all_rows[: self._popular_limit]
 
-            self._clear(self.popular_listbox)
+            clear_listbox(self.popular_listbox)
             for entry in visible:
                 self.popular_listbox.append(ExploreRow(
                     entry, update_info=self._updates_lookup(entry["id"]),

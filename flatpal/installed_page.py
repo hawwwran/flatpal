@@ -13,35 +13,17 @@ from gi.repository import Adw, GLib, Gtk  # noqa: E402
 from .core import fetch_apps, format_date, sort_apps
 from .metainfo import load_metainfo, system_lang
 from .search import filter_installed
-from .widgets import make_sort_pill, make_update_pill, update_tooltip
+from .widgets import (
+    clear_listbox,
+    make_list_clamp,
+    make_sort_pill,
+    make_status_label,
+    make_update_pill,
+    update_tooltip,
+)
 
 
 _SORT_LABELS = {"name": "name", "date": "install date", "size": "size"}
-
-
-# The listboxes below are wrapped in Adw.Clamp(900) for a tidy max-width
-# layout. Everything above the list — search bar, status — should share the
-# same constraint so the input box visually lines up with the list rows
-# instead of stretching to the full window width.
-LIST_MAX_WIDTH = 900
-
-
-def _clamp_child(widget: Gtk.Widget) -> Adw.Clamp:
-    """Wrap `widget` in an Adw.Clamp(max=LIST_MAX_WIDTH) so it lines up with
-    the boxed-list rows below it.
-
-    hexpand=True propagates up to ensure the clamp receives the full window
-    width as its allocation. tightening_threshold=max disables AdwClamp's
-    cubic-ease window — without it the child width slides on the easing
-    curve and content jitter in the for_size value moves the search bar
-    visibly by a few pixels.
-    """
-    clamp = Adw.Clamp()
-    clamp.set_maximum_size(LIST_MAX_WIDTH)
-    clamp.set_tightening_threshold(LIST_MAX_WIDTH)
-    clamp.set_child(widget)
-    clamp.set_hexpand(True)
-    return clamp
 
 
 def enrich_with_metainfo(
@@ -133,13 +115,9 @@ class InstalledPage(Gtk.Box):
         self.search_bar.set_search_mode(True)
         self.search_bar.set_show_close_button(False)
         self.search_bar.connect_entry(self.search_entry)
-        self.append(_clamp_child(self.search_bar))
+        self.append(make_list_clamp(self.search_bar))
 
-        self.status_label = Gtk.Label()
-        self.status_label.add_css_class("dim-label")
-        self.status_label.add_css_class("caption")
-        self.status_label.set_halign(Gtk.Align.START)
-        self.status_label.set_xalign(0.0)
+        self.status_label = make_status_label()
 
         # Brand-purple sort pill shared with the other tabs.
         self.sort_pill = make_sort_pill()
@@ -154,7 +132,7 @@ class InstalledPage(Gtk.Box):
         status_box.set_margin_end(12)
         status_box.append(self.status_label)
         status_box.append(self.sort_pill)
-        self.append(_clamp_child(status_box))
+        self.append(make_list_clamp(status_box))
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
@@ -168,17 +146,11 @@ class InstalledPage(Gtk.Box):
         self.listbox.set_margin_start(12)
         self.listbox.set_margin_end(12)
         # Expand to fill the clamp's full width so the row cards align with
-        # the search bar and status label above (which are clamped at 900
-        # via _clamp_child).
+        # the search bar and status label above.
         self.listbox.set_hexpand(True)
         self.listbox.connect("row-activated", self._on_listbox_row_activated)
 
-        clamp = Adw.Clamp()
-        clamp.set_maximum_size(LIST_MAX_WIDTH)
-        clamp.set_tightening_threshold(LIST_MAX_WIDTH)
-        clamp.set_child(self.listbox)
-        clamp.set_hexpand(True)
-        scrolled.set_child(clamp)
+        scrolled.set_child(make_list_clamp(self.listbox))
         self.append(scrolled)
 
     # ----- public API ------------------------------------------------------
@@ -218,15 +190,8 @@ class InstalledPage(Gtk.Box):
         if hasattr(row, "app"):
             self._on_row_activated(row.app)
 
-    def _clear_listbox(self):
-        child = self.listbox.get_first_child()
-        while child is not None:
-            nxt = child.get_next_sibling()
-            self.listbox.remove(child)
-            child = nxt
-
     def _render(self):
-        self._clear_listbox()
+        clear_listbox(self.listbox)
 
         filtered = filter_installed(self.apps, self.query)
         ordered = sort_apps(filtered, self.sort_key, self.reverse)

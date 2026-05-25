@@ -21,11 +21,12 @@ from .running import (
 )
 from .row_cache import RowCache
 from .running_rows import expected_row_type, make_running_row
-from .widgets import make_freeze_pill, make_sort_pill
-
-
-# Line the status row + dropdown up with the boxed-list rows below.
-LIST_MAX_WIDTH = 900
+from .widgets import (
+    make_freeze_pill,
+    make_list_clamp,
+    make_sort_pill,
+    make_status_label,
+)
 
 
 # Values the user can pick in the inline interval dropdown. Order matters —
@@ -79,11 +80,7 @@ class RunningPage(Gtk.Box):
         status_row.set_margin_start(12)
         status_row.set_margin_end(12)
 
-        self.status_label = Gtk.Label()
-        self.status_label.add_css_class("dim-label")
-        self.status_label.add_css_class("caption")
-        self.status_label.set_halign(Gtk.Align.START)
-        self.status_label.set_xalign(0.0)
+        self.status_label = make_status_label()
 
         # Brand-purple sort pill. Updated by _render_rows whenever sort changes.
         # Hidden until the first sample arrives — an empty pill looks broken,
@@ -193,26 +190,15 @@ class RunningPage(Gtk.Box):
         # Default to loading; _render_rows flips to "list" once a sample lands.
         self.stack.set_visible_child_name("loading")
 
-        # Single outer Adw.Clamp wrapping status_row + stack so both share the
-        # exact same 900px width allocation. Wrapping each child in its own
-        # clamp produces subtly different positions because the stack adds an
-        # extra layer of allocation (and the listbox inside it has hexpand
-        # that propagates upward differently than the status row's centerbox).
+        # Single outer clamp wrapping status_row + stack so both share the
+        # same width allocation. Wrapping each child in its own clamp produces
+        # subtly different positions because the stack adds an extra layer of
+        # allocation (and the listbox inside it has hexpand that propagates
+        # upward differently than the status row's centerbox).
         outer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer_box.append(status_row)
         outer_box.append(self.stack)
-
-        outer_clamp = Adw.Clamp()
-        outer_clamp.set_maximum_size(LIST_MAX_WIDTH)
-        # tightening_threshold = max disables AdwClamp's cubic-ease window so
-        # the child width is purely min(for_size, max). Combined with hexpand,
-        # the result is "fixed at max on wide windows; shrinks linearly only
-        # when the window itself is narrower than max." See explore_page.py.
-        outer_clamp.set_tightening_threshold(LIST_MAX_WIDTH)
-        outer_clamp.set_child(outer_box)
-        outer_clamp.set_vexpand(True)
-        outer_clamp.set_hexpand(True)
-        self.append(outer_clamp)
+        self.append(make_list_clamp(outer_box, vexpand=True))
 
     # ----- public API ------------------------------------------------------
 

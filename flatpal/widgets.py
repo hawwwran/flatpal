@@ -1,22 +1,14 @@
-"""Shared UI primitives — pills used across the three tabs.
+"""Shared UI primitives used across the three tabs.
 
-Three pill variants today:
+Pill variants (``make_sort_pill`` / ``make_freeze_pill`` /
+``make_installed_pill`` / ``make_update_pill``) plus a small set of layout
+helpers (``make_list_clamp``, ``make_status_label``, ``clear_listbox``) that
+keep the Running / Installed / Explore tabs visually identical without each
+page re-implementing the same Gtk plumbing.
 
-* ``make_sort_pill`` — purple Flatpal-brand pill (`#4B2E5F` on white text)
-  used to surface the current sort key on the Running / Installed / Explore
-  tabs. Non-interactive; the page updates its label whenever sort changes.
-
-* ``make_freeze_pill`` — toggleable pill that says "Freeze position". Blue
-  when active, soft gray when not. Used on the Running tab to let the user
-  pin the row order across CPU/memory refreshes; the consuming page reacts to
-  the callback by either preserving its `_rendered_order` or re-sorting.
-
-* ``make_installed_pill`` — Mint Teal pill that flags a row in the Explore
-  tab as "Installed" — replaces an earlier dim text label so the marker
-  scans at a glance.
-
-The CSS provider is installed lazily once per display so importing this
-module from a non-GTK context (or a unit test) doesn't side-effect.
+The CSS provider for the pills is installed lazily once per display so
+importing this module from a non-GTK context (or a unit test) doesn't
+side-effect.
 """
 
 from __future__ import annotations
@@ -27,7 +19,8 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gdk, Gtk  # noqa: E402
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gdk, Gtk  # noqa: E402
 
 
 # Brand palette is canonical in flatpal/palette.py — kept there as plain
@@ -41,6 +34,58 @@ from .palette import (
     MINT_TEAL as _MINT_TEAL,
     WARM_TERRACOTTA as _WARM_TERRACOTTA,
 )
+
+
+# ----- Layout helpers -------------------------------------------------------
+
+# Width allocated to the boxed lists on each tab. Encapsulated inside the
+# clamp builder below so a future tweak updates all three tabs in lockstep
+# instead of needing to edit the same constant in three page files.
+_LIST_MAX_WIDTH = 900
+
+
+def make_list_clamp(child: Gtk.Widget, *, vexpand: bool = False) -> Adw.Clamp:
+    """Wrap `child` in the boxed-list Adw.Clamp shared by every tab.
+
+    `tightening_threshold == maximum_size` flattens Adw.Clamp's default
+    cubic-ease window (~400..1150 px) into a hard `min(for_size, max)`.
+    Combined with `hexpand=True` propagating up the widget tree, the result
+    is "fixed at max on wide windows; shrinks linearly only when the window
+    itself is narrower than max." Without the tightening, content-driven
+    jitter in the clamp's allocation rides the easing curve and the search
+    bar visibly shifts a few pixels when the stack or status text changes.
+    """
+    clamp = Adw.Clamp()
+    clamp.set_maximum_size(_LIST_MAX_WIDTH)
+    clamp.set_tightening_threshold(_LIST_MAX_WIDTH)
+    clamp.set_child(child)
+    clamp.set_hexpand(True)
+    if vexpand:
+        clamp.set_vexpand(True)
+    return clamp
+
+
+def make_status_label() -> Gtk.Label:
+    """Dim caption label used by each tab's status row.
+
+    Left-aligned, single line, brand-uniform across Running / Installed /
+    Explore so all three status rows look identical.
+    """
+    label = Gtk.Label()
+    label.add_css_class("dim-label")
+    label.add_css_class("caption")
+    label.set_halign(Gtk.Align.START)
+    label.set_xalign(0.0)
+    return label
+
+
+def clear_listbox(listbox: Gtk.ListBox) -> None:
+    """Remove every child of `listbox` via the first-child / next-sibling walk."""
+    child = listbox.get_first_child()
+    while child is not None:
+        nxt = child.get_next_sibling()
+        listbox.remove(child)
+        child = nxt
 
 _PILL_CSS = (
     """

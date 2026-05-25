@@ -208,3 +208,44 @@ def fetch_remote_options() -> dict:
         opts.discard("user")
         result[(name, scope)] = opts
     return result
+
+
+def fix_remote_no_enumerate(remote: str, scope: str) -> tuple:
+    """Clear the no-enumerate flag on `remote`, then refresh its AppStream.
+
+    Returns `(ok, err)`:
+      - `(True, "")` once `remote-modify` succeeds. The follow-up
+        `--appstream` refresh is best-effort: it makes GNOME Software see
+        the app immediately, but a slow or failing refresh doesn't roll
+        back the flag (which is already cleared at that point).
+      - `(False, msg)` if `remote-modify` fails — `msg` is the captured
+        stderr, or the exception text when the binary is missing or times
+        out.
+
+    Single source of truth for the actual flatpak invocations: an earlier
+    regression mistyped the flag as `--no-no-enumerate` and silently
+    no-op'd, and we don't want two call sites that could regress
+    independently.
+    """
+    scope_flag = f"--{scope}"
+    try:
+        r = subprocess.run(
+            host_cmd(
+                ["flatpak", "remote-modify", scope_flag, "--enumerate", remote]
+            ),
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    if r.returncode != 0:
+        return False, r.stderr.strip() or "unknown error"
+    try:
+        subprocess.run(
+            host_cmd(
+                ["flatpak", "update", scope_flag, "--appstream", remote]
+            ),
+            capture_output=True, text=True, timeout=60, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return True, ""

@@ -19,7 +19,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
-from .core import fetch_remote_options, format_date
+from .core import fetch_remote_options, fix_remote_no_enumerate, format_date
 from .host import host_cmd
 from .metainfo import load_metainfo, system_lang
 from .permissions import parse_flatpak_metadata, summarize_permissions
@@ -393,36 +393,12 @@ class DetailPage(Adw.NavigationPage):
         scope: str,
         card: Gtk.Widget,
     ) -> None:
-        """Run remote-modify + appstream refresh on a worker thread, update UI on idle."""
+        """Clear no-enumerate on `remote` from a worker thread; update UI on idle."""
         button.set_sensitive(False)
         button.set_label("Fixing…")
 
-        scope_flag = f"--{scope}"
-
         def worker() -> None:
-            modify_cmd = host_cmd(
-                ["flatpak", "remote-modify", scope_flag, "--enumerate", remote]
-            )
-            try:
-                r = subprocess.run(
-                    modify_cmd, capture_output=True, text=True, timeout=30
-                )
-                ok = r.returncode == 0
-                err = r.stderr.strip()
-            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-                ok, err = False, str(exc)
-
-            if ok:
-                # Refresh AppStream so Software sees the app immediately.
-                # Best-effort: a slow / failed refresh shouldn't keep the
-                # banner visible, since the underlying flag is already fixed.
-                try:
-                    subprocess.run(
-                        host_cmd(["flatpak", "update", scope_flag, "--appstream", remote]),
-                        capture_output=True, text=True, timeout=60,
-                    )
-                except (FileNotFoundError, subprocess.TimeoutExpired):
-                    pass
+            ok, err = fix_remote_no_enumerate(remote, scope)
 
             def finish() -> bool:
                 parent = card.get_parent()
