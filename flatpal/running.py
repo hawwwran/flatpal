@@ -7,8 +7,8 @@ for a new process returns 0 % and subsequent samples reflect real activity.
 
 Two backends share the same shape:
 
-* `psutil.Process` — on the host (dev mode), when psutil is installed.
-* `HostProc`       — inside the Flatpak sandbox, where psutil's /proc reads
+* `psutil.Process`: on the host (dev mode), when psutil is installed.
+* `HostProc`:       inside the Flatpak sandbox, where psutil's /proc reads
                      would only see sandbox processes. HostProc reads
                      /proc/<pid>/{stat,status,cmdline,comm} via
                      `flatpak-spawn --host cat`, so it sees the host's
@@ -28,7 +28,7 @@ from .host import host_cmd, is_sandboxed
 
 try:
     import psutil
-except ImportError:  # pragma: no cover — psutil is optional now
+except ImportError:  # pragma: no cover; psutil is optional now
     psutil = None  # type: ignore
 
 
@@ -150,14 +150,14 @@ def _walk_descendants(root_pid: int, parents: Dict[int, int]) -> List[int]:
 
 
 class _MemInfo:
-    """psutil.Process.memory_info() shape — only .rss matters here."""
+    """psutil.Process.memory_info() shape (only .rss matters here)."""
     __slots__ = ("rss",)
     def __init__(self, rss: int) -> None:
         self.rss = rss
 
 
 class _ChildRef:
-    """Shape matching psutil.Process.children() entries — only .pid is used."""
+    """Shape matching psutil.Process.children() entries (only .pid is used)."""
     __slots__ = ("pid",)
     def __init__(self, pid: int) -> None:
         self.pid = pid
@@ -490,8 +490,8 @@ class RunningTracker:
         `cpu_percent`, `memory_bytes`, `branch`, `sub_instances`. The
         `sub_instances` list holds one dict per running sandbox of the app
         with its own `instance`, `pid`, `branch`, `cpu_percent`,
-        `memory_bytes` — sorted by pid so the UI ordering doesn't flicker
-        between samples.
+        `memory_bytes` (sorted by pid so the UI ordering doesn't flicker
+        between samples).
 
         Sandbox fast path: when the process factory is HostProc, we
         pre-fetch /proc/<pid>/{stat,status} (and any uncached
@@ -576,7 +576,7 @@ class RunningTracker:
                     "started_at": meta["started_at"],
                 })
 
-            # Oldest sandbox first — usually the "main" interactive instance.
+            # Oldest sandbox first; usually the "main" interactive instance.
             # PID tiebreaks when create_time is missing or equal (it can match
             # to the second for processes started back-to-back).
             sub_instances.sort(
