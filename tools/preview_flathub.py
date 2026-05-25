@@ -1001,49 +1001,23 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
     else:
         desktop_card = ""
 
-    # Flatpak manifest card — split into top-level meta, finish-args (each
-    # call-out with a small explanation pulled from the standard set), and
-    # modules with their source pinning.
+    # Flatpak manifest card — top-level meta, finish-args (each with a small
+    # explanation from the standard set), and modules with their source pinning.
     if manifest:
-        top_rows = []
-        for key in ("app-id", "runtime", "runtime-version", "sdk", "command"):
-            if key in manifest:
-                top_rows.append(
-                    f'<tr><th>{escape(key)}</th>'
-                    f'<td>{escape(str(manifest[key]))}</td></tr>'
-                )
         finish_args = manifest.get("finish-args", []) or []
         finish_items = "".join(
             f'<li><code>{escape(str(a))}</code> '
             f'<span class="note">{escape(_finish_note(a))}</span></li>'
             for a in finish_args
         )
-        module_blocks = []
-        for m in manifest.get("modules", []) or []:
-            name = escape(str(m.get("name", "")))
-            bs = escape(str(m.get("buildsystem", "—")))
-            src_lines = []
-            for s in m.get("sources", []) or []:
-                src_lines.append(
-                    "<dl class=\"source\">" +
-                    "".join(
-                        f'<dt>{escape(k)}</dt><dd><code>{escape(str(v))}</code></dd>'
-                        for k, v in s.items()
-                    ) +
-                    "</dl>"
-                )
-            module_blocks.append(
-                f'<div class="module"><h3>{name} '
-                f'<span class="meta">({bs})</span></h3>'
-                f'{"".join(src_lines)}</div>'
-            )
+        modules = manifest.get("modules", []) or []
         manifest_card = (
             f'<section class="card"><h2>Flatpak manifest</h2>'
-            f'<table class="kv">{"".join(top_rows)}</table>'
+            f'<table class="kv">{_render_manifest_top(manifest)}</table>'
             f'<h2 class="section-sub">finish-args ({len(finish_args)})</h2>'
             f'<ul class="finish-args">{finish_items}</ul>'
-            f'<h2 class="section-sub">Modules ({len(manifest.get("modules") or [])})</h2>'
-            f'{"".join(module_blocks)}</section>'
+            f'<h2 class="section-sub">Modules ({len(modules)})</h2>'
+            f'{_render_manifest_modules(modules)}</section>'
         )
     elif yaml is None:
         manifest_card = (
@@ -1061,32 +1035,7 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
     # instead of type: git). Surfaced so the maintainer can sanity-check the
     # local-build setup at a glance.
     if dev_manifest:
-        dev_top_rows = []
-        for key in ("app-id", "runtime", "runtime-version", "sdk", "command"):
-            if key in dev_manifest:
-                dev_top_rows.append(
-                    f'<tr><th>{escape(key)}</th>'
-                    f'<td>{escape(str(dev_manifest[key]))}</td></tr>'
-                )
-        dev_module_blocks = []
-        for m in dev_manifest.get("modules", []) or []:
-            name = escape(str(m.get("name", "")))
-            bs = escape(str(m.get("buildsystem", "—")))
-            src_lines = []
-            for s in m.get("sources", []) or []:
-                src_lines.append(
-                    "<dl class=\"source\">" +
-                    "".join(
-                        f'<dt>{escape(k)}</dt><dd><code>{escape(str(v))}</code></dd>'
-                        for k, v in s.items()
-                    ) +
-                    "</dl>"
-                )
-            dev_module_blocks.append(
-                f'<div class="module"><h3>{name} '
-                f'<span class="meta">({bs})</span></h3>'
-                f'{"".join(src_lines)}</div>'
-            )
+        dev_modules = dev_manifest.get("modules", []) or []
         dev_manifest_card = (
             f'<section class="card"><h2>Dev manifest '
             f'<span style="font-size:0.7em;color:var(--muted);font-weight:400">'
@@ -1096,9 +1045,9 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
             f'Same finish-args as the canonical manifest above; only the source '
             f'differs — <code>type: dir, path: .</code> so flatpak-builder copies '
             f'the working tree instead of cloning a tag.</p>'
-            f'<table class="kv">{"".join(dev_top_rows)}</table>'
-            f'<h2 class="section-sub">Modules ({len(dev_manifest.get("modules") or [])})</h2>'
-            f'{"".join(dev_module_blocks)}</section>'
+            f'<table class="kv">{_render_manifest_top(dev_manifest)}</table>'
+            f'<h2 class="section-sub">Modules ({len(dev_modules)})</h2>'
+            f'{_render_manifest_modules(dev_modules)}</section>'
         )
     else:
         dev_manifest_card = ""
@@ -1187,6 +1136,42 @@ def render(info: dict, desktop: dict, manifest: dict, dev_manifest: dict,
         + f"Refresh with <code>python3 tools/preview_flathub.py</code>.</footer>"
         + f"</div></body></html>"
     )
+
+
+def _render_manifest_top(manifest: dict) -> str:
+    """Render the app-id / runtime / sdk / command key rows for a manifest."""
+    rows = []
+    for key in ("app-id", "runtime", "runtime-version", "sdk", "command"):
+        if key in manifest:
+            rows.append(
+                f'<tr><th>{escape(key)}</th>'
+                f'<td>{escape(str(manifest[key]))}</td></tr>'
+            )
+    return "".join(rows)
+
+
+def _render_manifest_modules(modules: list) -> str:
+    """Render the per-module block + source `<dl>` pairs for a manifest."""
+    blocks = []
+    for m in modules:
+        name = escape(str(m.get("name", "")))
+        bs = escape(str(m.get("buildsystem", "—")))
+        src_lines = []
+        for s in m.get("sources", []) or []:
+            src_lines.append(
+                '<dl class="source">' +
+                "".join(
+                    f'<dt>{escape(k)}</dt><dd><code>{escape(str(v))}</code></dd>'
+                    for k, v in s.items()
+                ) +
+                "</dl>"
+            )
+        blocks.append(
+            f'<div class="module"><h3>{name} '
+            f'<span class="meta">({bs})</span></h3>'
+            f'{"".join(src_lines)}</div>'
+        )
+    return "".join(blocks)
 
 
 _FINISH_ARG_NOTES = {

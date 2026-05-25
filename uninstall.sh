@@ -24,15 +24,7 @@ remove_file "${DESKTOP_DIR}/io.github.hawwwran.flatpal.desktop"
 for size in "${ICON_SIZES[@]}"; do
   dir="${ICON_HICOLOR}/${size}x${size}/apps"
   remove_file "${dir}/io.github.hawwwran.flatpal.png"
-  # Legacy names from earlier installs — keep cleaning these up.
-  remove_file "${dir}/flatpal.png"
-  remove_file "${dir}/com.hawwwran.flatpal.png"
 done
-
-# Legacy paths from earlier installs — clean up if still around.
-remove_file "${DESKTOP_DIR}/flatpal.desktop"
-remove_file "${ICON_HICOLOR}/scalable/apps/flatpal.svg"
-remove_file "${APP_DIR}/flatpal.py"
 
 if [[ -d "${APP_DIR}" ]]; then
   rm -rf "${APP_DIR}" && { echo "  removed ${APP_DIR}/"; removed=$((removed+1)); }
