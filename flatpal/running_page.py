@@ -1,4 +1,4 @@
-"""Running-flatpaks tab — live CPU/memory per running app, refreshed every 2 s."""
+"""Running-flatpaks tab: live CPU/memory per running app, refreshed every 2 s."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .widgets import (
 )
 
 
-# Values the user can pick in the inline interval dropdown. Order matters —
+# Values the user can pick in the inline interval dropdown. Order matters;
 # it's the order the user sees in the menu.
 INTERVAL_OPTIONS_SEC = (1, 2, 5, 10, 30)
 INTERVAL_LABELS = tuple(f"{s} s" for s in INTERVAL_OPTIONS_SEC)
@@ -70,7 +70,7 @@ class RunningPage(Gtk.Box):
 
         # Status row: "N apps running …" on the left, refresh-interval picker on the right.
         # Use Gtk.CenterBox (not Gtk.Box+hexpand) so children DON'T need hexpand
-        # to push apart — hexpand on a Gtk.Box child propagates up the tree and
+        # to push apart; hexpand on a Gtk.Box child propagates up the tree and
         # makes Adw.Clamp ignore its max-size constraint, which would let the
         # status text drift further left than the row cards below. CenterBox
         # places its end widget at its right edge without that propagation.
@@ -84,7 +84,7 @@ class RunningPage(Gtk.Box):
         self.status_label = make_status_label()
 
         # Brand-purple sort pill. Updated by _render_rows whenever sort changes.
-        # Hidden until the first sample arrives — an empty pill looks broken,
+        # Hidden until the first sample arrives; an empty pill looks broken,
         # and the actual sort label isn't known until _render_rows runs.
         self.sort_pill = make_sort_pill()
         self.sort_pill.set_visible(False)
@@ -92,7 +92,7 @@ class RunningPage(Gtk.Box):
         # Freeze-position toggle: blue when on, gray when off. Pins the
         # current order so CPU/memory swings don't shuffle the list while the
         # user is reading it. Hidden alongside the sort pill until the first
-        # sample arrives — a toggle with no rows behind it is meaningless.
+        # sample arrives; a toggle with no rows behind it is meaningless.
         self.freeze_pill = make_freeze_pill(
             self._on_freeze_toggled,
             initial=self._freeze_position,
@@ -139,7 +139,7 @@ class RunningPage(Gtk.Box):
         self.stack.set_vexpand(True)
 
         # Loading state. Flatpal sees itself in `flatpak ps`, so the "empty"
-        # page below is effectively unreachable in practice — but on the
+        # page below is effectively unreachable in practice, but on the
         # first sample, before flatpak-spawn has rounded the trip, we have
         # nothing to render. Show a spinner + status line until then.
         loading_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -259,7 +259,7 @@ class RunningPage(Gtk.Box):
         if key == self._sort_by:
             return
         self._sort_by = key
-        # A new sort retires the previously-frozen order — the user explicitly
+        # A new sort retires the previously-frozen order; the user explicitly
         # asked for a different layout, so honour it. The render captures a
         # new order; if freeze is still on, that new order becomes the pin.
         self._rows.reset_order()
@@ -334,7 +334,7 @@ class RunningPage(Gtk.Box):
 
         Keeps each row widget alive across ticks (cached by app_id) so an
         in-flight hover-tooltip survives the refresh. Restructures the
-        listbox only when the order or the set of running apps changes —
+        listbox only when the order or the set of running apps changes;
         which means tooltips, hover states, and expander disclosure are
         all stable during a typical refresh.
 
