@@ -47,7 +47,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # per-app exported icons (one of which is, e.g. Black Box's icon).
         # Adding both system and user export trees so `IconTheme.has_icon()`
         # / `set_from_icon_name()` resolves Discord / Black Box / etc. on
-        # the Running and Installed tabs. The Explore tab is unaffected —
+        # the Running and Installed tabs. The Explore tab is unaffected;
         # it downloads its own thumbnails from the Flathub CDN. Outside the
         # sandbox the paths still exist on the host; add_search_path is a
         # no-op for non-existent directories so this is also safe in dev mode.
@@ -57,7 +57,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
             os.path.expanduser("~/.local/share/flatpak/exports/share/icons")
         )
 
-        # Load persisted prefs first — they seed every GIO action's initial
+        # Load persisted prefs first; they seed every GIO action's initial
         # state, the visible tab, the sampling interval and the Flathub toggle.
         self.settings = user_settings.load()
 
@@ -69,8 +69,8 @@ class FlatpalWindow(Adw.ApplicationWindow):
         self._apply_restored_settings()
 
         # Hygiene: cap the on-disk screenshot cache to a few hundred MB so it
-        # doesn't grow unbounded over months of Explore browsing. Cheap — only
-        # touches files when over budget.
+        # doesn't grow unbounded over months of Explore browsing. Cheap;
+        # only touches files when over budget.
         prune_cache(SCREENSHOT_CACHE_MAX_BYTES)
 
         # Always load installed apps first so Explore can see what's installed.
@@ -86,14 +86,14 @@ class FlatpalWindow(Adw.ApplicationWindow):
 
         # Background-discover available updates. Single ~2.5 s call that
         # feeds every tab's update-badge lookup; finishing late just means
-        # the badges fade in once the worker lands — first paint isn't
+        # the badges fade in once the worker lands; first paint isn't
         # blocked. See updates.py for why the cost is flat regardless of
         # how many apps are installed.
         self._start_updates_fetch()
 
         # Detect installed apps whose origin remote has the bundle-install
         # no-enumerate quirk and surface a one-shot dialog. The detail-page
-        # card still shows per-app even after dismissal — this is just the
+        # card still shows per-app even after dismissal; this is just the
         # global heads-up.
         NoEnumerateCheck(
             self,
@@ -292,7 +292,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
         self.view_stack.add_titled_with_icon(
             self.explore_page, "explore", "Explore", "system-search-symbolic"
         )
-        # Restore whichever tab the user last had visible — falls back to
+        # Restore whichever tab the user last had visible; falls back to
         # "installed" if the stored value is missing or no longer a known tab.
         last_tab = self.settings.get("last_tab", "installed")
         known = {"running", "installed", "explore"}
