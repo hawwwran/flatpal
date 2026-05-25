@@ -71,31 +71,33 @@
   <screenshots>
     <screenshot type="default">
       <caption>The Running tab with CPU and memory sampled live for each sandbox</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/running-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.1/data/screenshots/running-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Installed tab listing every Flatpak with summary and version</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/installed-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.1/data/screenshots/installed-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Explore tab browsing Flathub by popularity</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/explore-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.1/data/screenshots/explore-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page for an installed app, with the Open app action</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/detail.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.1/data/screenshots/detail.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page surfacing an available update with the version diff and inline release notes</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/detail-update.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.1/data/screenshots/detail-update.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page showing the app's own screenshots and About metadata</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.0/data/screenshots/detail2.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v0.2.1/data/screenshots/detail2.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
+    <release version="0.2.1" date="2026-05-25">
+    </release>
     <release version="0.2.0" date="2026-05-24">
       <description>
       <ul>
