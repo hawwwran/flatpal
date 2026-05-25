@@ -1,4 +1,4 @@
-"""Explore tab — search the Flathub appstream catalog for not-yet-installed apps."""
+"""Explore tab: search the Flathub appstream catalog for not-yet-installed apps."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class ExploreRow(Adw.ActionRow):
         if update_info:
             # Catalog entries don't carry the user's installed version, so
             # the tooltip degrades to the short form ("Update available →
-            # {new}") — see widgets.update_tooltip.
+            # {new}"); see widgets.update_tooltip.
             self.add_suffix(make_update_pill(
                 tooltip=update_tooltip(None, update_info),
             ))
@@ -270,7 +270,7 @@ class ExplorePage(Gtk.Box):
     def _build_list_with_more(self, on_more):
         """Make a ScrolledWindow → Box(listbox + show-more button).
 
-        No inner Adw.Clamp here — the outer clamp at the page level handles
+        No inner Adw.Clamp here; the outer clamp at the page level handles
         width constraint for the whole tab, which guarantees the row cards
         align with the search bar and status text above.
         """
@@ -304,7 +304,7 @@ class ExplorePage(Gtk.Box):
     def ensure_data_loaded(self) -> None:
         """Kick off catalog + popularity fetch on first activation.
 
-        Popularity is fetched unconditionally — the toggle below only hides
+        Popularity is fetched unconditionally; the toggle below only hides
         the empty-state shelf, it doesn't disable the underlying data. Once
         fetched it's cached for 24 h, so the popularity sort and the install-
         count chips keep working even when the shelf is hidden.
@@ -321,7 +321,7 @@ class ExplorePage(Gtk.Box):
         """Kick off ONLY the catalog parse (no popularity fetch).
 
         Used by the window at startup so detail pages of installed apps can
-        consult the catalog's release list — that list comes from the
+        consult the catalog's release list; that list comes from the
         remote and includes versions newer than what's deployed locally,
         which is exactly the "what's new since installed" diff the update
         box renders. Catalog parse is ~1 s of local IO, cheap to do eagerly.
@@ -357,7 +357,7 @@ class ExplorePage(Gtk.Box):
         if key == self._sort_by:
             return
         self._sort_by = key
-        # Changing sort is a "new view" — collapse any prior "Show more"
+        # Changing sort is a "new view"; collapse any prior "Show more"
         # expansion back to the initial 50 so the user isn't surprised by
         # an unexpectedly long list in a different order.
         self._search_limit = INITIAL_LIMIT
@@ -393,7 +393,7 @@ class ExplorePage(Gtk.Box):
     def refresh(self):
         """Re-render against current state (catalog/popularity/installed IDs).
 
-        Public entry point — invoked from app.py:_refresh_active_tab when the
+        Public entry point: invoked from app.py:_refresh_active_tab when the
         user presses Reload on the Explore tab, and internally on every state
         transition (search-changed, sort-changed, fetch-finished, …).
         """
@@ -405,7 +405,7 @@ class ExplorePage(Gtk.Box):
     #
     # Each resolver returns the ViewState that should appear on screen given
     # the current data flags. The search and popular branches additionally
-    # populate their listbox as a side effect — the row counts feed the
+    # populate their listbox as a side effect; the row counts feed the
     # status text and the "Show more" button label.
 
     def _resolve_view_state(
@@ -491,7 +491,7 @@ class ExplorePage(Gtk.Box):
             )
 
         # Popularity fetch finished with no hits (network failure, all four
-        # pages failed). Surface a retry — without one the only way to
+        # pages failed). Surface a retry; without one the only way to
         # recover was to quit and relaunch.
         if (
             self._data.catalog_loaded
