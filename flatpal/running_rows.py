@@ -301,7 +301,8 @@ class RunningExpanderRow(Adw.ExpanderRow):
                 widget = self._sub_cache.pop(pid)
                 try:
                     self.remove(widget)
-                except Exception:
+                except Exception:  # noqa: BLE001
+                    # GTK detach race: widget already gone, nothing to do.
                     pass
         for sub in new_subs:
             pid = sub["pid"]

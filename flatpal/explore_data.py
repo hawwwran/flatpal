@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import threading
+import urllib.error
+import xml.etree.ElementTree as ET
 from typing import Callable
 
 import gi
@@ -10,6 +13,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib  # noqa: E402
 
+from . import debuglog
 from .catalog import load_catalog
 from .metainfo import system_lang
 from .popularity import load_popular, popularity_index
@@ -42,13 +46,10 @@ class CatalogManager:
         lang = system_lang()
 
         def worker():
-            # Catch *anything* so the finish() callback always fires and the
-            # catalog_loading flag clears. Without this, an exception inside
-            # load_catalog (or any helper it calls) leaves the Explore tab
-            # stuck on the loading spinner forever.
             try:
                 data = load_catalog(lang=lang)
-            except Exception:
+            except (OSError, ET.ParseError) as exc:
+                debuglog.log("catalog load failed: %r", exc)
                 data = {}
 
             def finish():
@@ -77,16 +78,16 @@ class CatalogManager:
             GLib.idle_add(update)
 
         def worker():
-            # Catch everything so the finish() callback always fires; without
-            # this an exception from load_popular or popularity_index leaves
-            # the spinner stuck and ensure_data_loaded() permanently no-ops.
             try:
                 hits = load_popular(on_progress=on_progress)
-            except Exception:
+            except (urllib.error.URLError, OSError, json.JSONDecodeError,
+                    ValueError, TimeoutError) as exc:
+                debuglog.log("popular hits fetch failed: %r", exc)
                 hits = []
             try:
                 idx = popularity_index(hits)
-            except Exception:
+            except (TypeError, ValueError, KeyError) as exc:
+                debuglog.log("popularity_index failed: %r", exc)
                 idx = {}
 
             def finish():

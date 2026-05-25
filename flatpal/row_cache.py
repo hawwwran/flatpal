@@ -48,7 +48,7 @@ class RowCache:
         for widget in list(self.iter_widgets()):
             try:
                 self._container.remove(widget)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         self._cache.clear()
         self.rendered_order = []
@@ -71,7 +71,7 @@ class RowCache:
                 widget = self._cache.pop(app_id)
                 try:
                     self._container.remove(widget)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
 
         # 2) Sandbox count flipped between 1 and >1 → need a different widget
@@ -83,7 +83,7 @@ class RowCache:
                 widget = self._cache.pop(app_id)
                 try:
                     self._container.remove(widget)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
 
         # 3) Decide whether we can update in place.
@@ -105,7 +105,7 @@ class RowCache:
             for widget in list(self._cache.values()):
                 try:
                     self._container.remove(widget)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             for app_id in desired_order:
                 existing = self._cache.get(app_id)

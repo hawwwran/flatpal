@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import threading
 
@@ -12,6 +13,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
+from . import debuglog
 from . import settings as user_settings
 from .cache import prune_cache
 from .constants import SCREENSHOT_CACHE_MAX_BYTES
@@ -110,7 +112,8 @@ class FlatpalWindow(Adw.ApplicationWindow):
         def worker():
             try:
                 data = fetch_updates()
-            except Exception:
+            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                debuglog.log("updates fetch failed: %r", exc)
                 data = {}
 
             def finish():

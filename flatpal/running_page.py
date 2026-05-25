@@ -11,6 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
+from . import debuglog
 from .constants import REFRESH_MS
 from .running import (
     RunningTracker,
@@ -313,7 +314,8 @@ class RunningPage(Gtk.Box):
         def worker():
             try:
                 rows = tracker.sample()
-            except Exception:
+            except (OSError, ValueError, RuntimeError) as exc:
+                debuglog.log("tracker.sample failed: %r", exc)
                 rows = []
             GLib.idle_add(self._on_sample_done, rows)
 

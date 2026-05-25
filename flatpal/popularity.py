@@ -21,6 +21,7 @@ from typing import Callable, List, Optional
 
 
 from . import __version__ as _VERSION
+from . import debuglog
 
 POPULAR_URL = "https://flathub.org/api/v2/collection/popular"
 DEFAULT_PER_PAGE = 250
@@ -108,7 +109,8 @@ def fetch_popular(
                 page_hits[page] = hits
                 if on_progress:
                     on_progress(len(page_hits), pages, _combine(page_hits))
-            except Exception as exc:  # noqa: BLE001 — collect all
+            except Exception as exc:  # noqa: BLE001 collect all
+                debuglog.log("popularity page fetch failed: %r", exc)
                 errors.append(exc)
 
     if errors and not page_hits:
