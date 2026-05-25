@@ -6,8 +6,7 @@ from typing import Iterable, List, Optional, Set
 
 
 # Order matters: tested first → fastest reject path.
-INSTALLED_FIELDS = ("name", "id", "developer_name", "summary")
-CATALOG_FIELDS = ("name", "id", "developer_name", "summary")
+SEARCH_FIELDS = ("name", "id", "developer_name", "summary")
 
 
 def _normalise(text: Optional[str]) -> str:
@@ -23,7 +22,7 @@ def _value_for(entry: dict, key: str) -> str:
     return _normalise(entry.get(key))
 
 
-def matches(entry: dict, query: str, fields: Iterable[str] = INSTALLED_FIELDS) -> bool:
+def matches(entry: dict, query: str, fields: Iterable[str] = SEARCH_FIELDS) -> bool:
     """Lowercase substring match. Empty query → match everything."""
     if not query:
         return True
@@ -38,7 +37,7 @@ def filter_installed(apps: List[dict], query: str) -> List[dict]:
     """Filter an installed-apps list by `query`. Empty query → original list."""
     if not query.strip():
         return list(apps)
-    return [a for a in apps if matches(a, query, INSTALLED_FIELDS)]
+    return [a for a in apps if matches(a, query)]
 
 
 def search_catalog(
@@ -70,7 +69,7 @@ def search_catalog(
 
     out: List[dict] = []
     for app_id, entry in catalog.items():
-        if matches(entry, q, CATALOG_FIELDS):
+        if matches(entry, q):
             row = dict(entry)
             row["installed"] = app_id in installed_ids
             if popularity_idx is not None:

@@ -47,12 +47,6 @@ def _icon_root_candidates() -> List[Path]:
     ]
 
 
-# Back-compat: first system path. Kept so tests / external callers that
-# imported the old constant still resolve.
-CATALOG_PATH = _catalog_candidates()[0]
-ICON_ROOT = _icon_root_candidates()[0]
-
-
 def catalog_icon_path(
     app_id: str,
     icon_root: Optional[Path] = None,

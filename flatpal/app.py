@@ -389,13 +389,11 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # The three pages.
         self.installed_page = InstalledPage(
             on_row_activated=self._open_detail_for,
-            on_render=self._on_page_render,
             updates_lookup=self.updates_lookup,
         )
         self.explore_page = ExplorePage(
             on_row_activated=self._open_detail_for_explore,
             installed_ids_getter=lambda: self.installed_page.installed_ids(),
-            on_render=self._on_page_render,
             on_show_popular_changed=lambda v: self._save_setting(
                 "show_popular", bool(v)
             ),
@@ -546,11 +544,6 @@ class FlatpalWindow(Adw.ApplicationWindow):
             self.running_page.start_tracking()
         else:
             self.running_page.stop_tracking()
-
-    def _on_page_render(self):
-        # Reserved for future header subtitle updates; the pages own their
-        # own status labels for now so nothing to do.
-        pass
 
     # ----- navigation ------------------------------------------------------
 

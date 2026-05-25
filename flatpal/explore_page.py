@@ -88,14 +88,12 @@ class ExplorePage(Gtk.Box):
         self,
         on_row_activated: Callable[[dict], None],
         installed_ids_getter: Callable[[], Set[str]],
-        on_render: Optional[Callable[[], None]] = None,
         on_show_popular_changed: Optional[Callable[[bool], None]] = None,
         updates_lookup: Optional[Callable[[str], Optional[dict]]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._on_row_activated = on_row_activated
         self._installed_ids_getter = installed_ids_getter
-        self._on_render = on_render
         self._on_show_popular_changed = on_show_popular_changed
         self._updates_lookup = updates_lookup or (lambda _id: None)
         # When True (default): fetch Flathub popularity and show the popular
@@ -418,16 +416,12 @@ class ExplorePage(Gtk.Box):
 
         if not query.strip():
             self._render_empty_state(installed_ids)
-            if self._on_render:
-                self._on_render()
             return
 
         if not self._data.catalog_loaded:
             self.stack.set_visible_child_name("loading")
             self.status_label.set_label("")
             self.sort_pill.set_visible(False)
-            if self._on_render:
-                self._on_render()
             return
 
         # The "Show popular" toggle only hides the empty-state shelf; we
@@ -478,9 +472,6 @@ class ExplorePage(Gtk.Box):
             )
             self.sort_pill.set_visible(False)
             self.search_more_btn.set_visible(False)
-
-        if self._on_render:
-            self._on_render()
 
     def _render_empty_state(self, installed_ids: Set[str]):
         # If "Show popular" is off, skip straight to the placeholder regardless

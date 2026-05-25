@@ -110,7 +110,7 @@ class AppRow(Adw.ActionRow):
 
 class InstalledPage(Gtk.Box):
     def __init__(
-        self, on_row_activated, on_render=None,
+        self, on_row_activated,
         updates_lookup: Optional[Callable[[str], Optional[dict]]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
@@ -119,7 +119,6 @@ class InstalledPage(Gtk.Box):
         self.reverse = True
         self.query = ""
         self._on_row_activated = on_row_activated
-        self._on_render = on_render
         self._updates_lookup = updates_lookup or (lambda _id: None)
 
         self.search_entry = Gtk.SearchEntry()
@@ -246,6 +245,3 @@ class InstalledPage(Gtk.Box):
             )
         self.sort_pill.set_label(f"sorted by {sort_label} {arrow}")
         self.sort_pill.set_visible(total > 0)
-
-        if self._on_render:
-            self._on_render()
