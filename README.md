@@ -25,7 +25,7 @@ Three tabs, one window, lots of helpful context.
 ### Running
 
 <p align="center">
-  <img src="data/screenshots/running-tab.png" alt="Running tab — four apps with Inkscape expanded to show three sandboxes" width="780">
+  <img src="data/screenshots/running-tab.png" alt="Running tab, four apps with Inkscape expanded to show three sandboxes" width="780">
 </p>
 
 A live look at every Flatpak sandbox currently running on your system,
@@ -37,7 +37,7 @@ memory across all running apps.
 Apps with more than one sandbox expand into a per-instance breakdown:
 each sub-row shows its **PID, command line, time since start** and its
 own CPU / memory share — so you can tell which open Inkscape window is
-actually doing the work. Sort by CPU (default — heaviest hitters on top),
+actually doing the work. Sort by CPU (default, heaviest hitters on top),
 memory, or name. Toggle **Freeze position** to pin the current order
 while sampling swings keep updating the numbers, and **Collapse all**
 appears whenever any expander is open.
@@ -45,7 +45,7 @@ appears whenever any expander is open.
 ### Installed
 
 <p align="center">
-  <img src="data/screenshots/installed-tab.png" alt="Installed tab — twelve apps sorted by install date" width="780">
+  <img src="data/screenshots/installed-tab.png" alt="Installed tab, twelve apps sorted by install date" width="780">
 </p>
 
 Every app deployed on the machine, each with its icon, version, on-disk
@@ -60,7 +60,7 @@ the affected app appears there).
 ### Explore
 
 <p align="center">
-  <img src="data/screenshots/explore-tab.png" alt="Explore tab — Popular on Flathub shelf with install counts" width="780">
+  <img src="data/screenshots/explore-tab.png" alt="Explore tab, Popular on Flathub shelf with install counts" width="780">
 </p>
 
 Browse Flathub's catalogue without leaving the window. Search by name,
@@ -81,20 +81,20 @@ Flathub call is cached for 24 h either way.
 ## The detail page
 
 <p align="center">
-  <img src="data/screenshots/detail.png" alt="Detail page — installed app with About panel" width="420">
+  <img src="data/screenshots/detail.png" alt="Detail page, installed app with About panel" width="420">
   &nbsp;
-  <img src="data/screenshots/detail2.png" alt="Detail page — catalog-only app with screenshots and license" width="420">
+  <img src="data/screenshots/detail2.png" alt="Detail page, catalog-only app with screenshots and license" width="420">
 </p>
 
 Click any app — installed or not — to slide into a detail view with the
 summary, screenshots, full description, license, homepage, donate / help /
 issue-tracker links, and (for installed apps) a compact sandbox-permissions
 summary plus version, size and install date. Catalog-only apps land on
-the same page minus the install-specific fields — same layout, less
+the same page minus the install-specific fields; same layout, less
 clutter.
 
 <p align="center">
-  <img src="data/screenshots/detail-update.png" alt="Detail page — Update available card with version diff and release notes" width="480">
+  <img src="data/screenshots/detail-update.png" alt="Detail page, Update available card with version diff and release notes" width="480">
 </p>
 
 When the app you're looking at has a pending update, a tinted **Update
@@ -110,8 +110,8 @@ gallery and Escape / `q` to close.
 
 Two action buttons in the header:
 
-- **Open app** — runs the installed flatpak (shown only when it's installed).
-- **Open in Software** — hands off to GNOME Software when you want to
+- **Open app**: runs the installed flatpak (shown only when it's installed).
+- **Open in Software**: hands off to GNOME Software when you want to
   install, uninstall or update.
 
 Flatpal is happy to be the place you *look*; it lets your distro's software
@@ -153,7 +153,7 @@ Flatpal into another tool's "more info" action.
 Removes every file the installer placed and refreshes the desktop / icon
 caches. The screenshot cache at `~/.cache/flatpal/screenshots/` and the
 Flathub popularity cache at `~/.cache/flatpal/flathub-popular.json` are
-left alone (they're cheap to rebuild — delete them yourself if you'd like
+left alone (they're cheap to rebuild; delete them yourself if you'd like
 the disk space back).
 
 ## Requirements
@@ -161,7 +161,7 @@ the disk space back).
 System packages already present on most modern GNOME desktops (Zorin OS 18,
 Ubuntu 24.04, Fedora 40+):
 
-- `python3-gi`, `gir1.2-gtk-4.0`, `gir1.2-adw-1` (libadwaita ≥ 1.4 — tested
+- `python3-gi`, `gir1.2-gtk-4.0`, `gir1.2-adw-1` (libadwaita ≥ 1.4, tested
   against 1.5)
 - `python3-psutil` (Running tab CPU/memory sampling)
 - `flatpak` (obviously)
@@ -212,7 +212,7 @@ project.
 
 | Field                      | Source                                                                              |
 | -------------------------- | ----------------------------------------------------------------------------------- |
-| Running apps               | `flatpak ps --columns=instance,pid,child-pid,application,branch` — one row per      |
+| Running apps               | `flatpak ps --columns=instance,pid,child-pid,application,branch`; one row per       |
 |                            | sandbox. CPU and memory read via `psutil.Process(pid)` walked recursively over each |
 |                            | instance's process tree. CPU % is delta-based (first sample = baseline = 0 %).      |
 | Per-sandbox cmdline / age  | `/proc/<pid>/cmdline` and `create_time` via `psutil`, queried on the root PID of    |
@@ -227,22 +227,22 @@ project.
 | Screenshots (image data)   | External URLs from the metainfo (Flathub GitHub raw, project sites). Downloaded     |
 |                            | once to `~/.cache/flatpal/screenshots/<id>/<sha>.png` and reused. Content-Type      |
 |                            | must be `image/*` and bodies ≤ 10 MB.                                               |
-| Sandbox permissions        | `flatpak info -m <id>` — `[Context]` section: `shared`, `sockets`, `devices`,       |
+| Sandbox permissions        | `flatpak info -m <id>`; `[Context]` section: `shared`, `sockets`, `devices`,        |
 |                            | `filesystems`, `features`; plus D-Bus surface counts.                               |
-| Explore catalog            | `/var/lib/flatpak/appstream/flathub/<arch>/active/appstream.xml.gz` —               |
+| Explore catalog            | `/var/lib/flatpak/appstream/flathub/<arch>/active/appstream.xml.gz`,                |
 |                            | ≈4 000 components, streamed via `ET.iterparse` so peak memory stays bounded.        |
 |                            | Falls back to the user-install path at `~/.local/share/flatpak/...` when system     |
 |                            | doesn't have the Flathub remote configured.                                         |
 | Explore icons              | Pre-rendered PNGs in the same dir at `.../icons/{128x128,64x64}/<id>.png`.          |
-| Explore popularity         | `https://flathub.org/api/v2/collection/popular` — top-1000 apps by installs in the  |
+| Explore popularity         | `https://flathub.org/api/v2/collection/popular`; top-1000 apps by installs in the   |
 |                            | past month, fetched as 4 parallel `?page=N&per_page=250` calls. Cached for 24 h;    |
 |                            | partial fetches are returned to the UI but **not** persisted, so the next launch    |
 |                            | retries.                                                                            |
-| Available updates          | `flatpak remote-ls --updates --app` — one ~2.5 s background call at window startup  |
+| Available updates          | `flatpak remote-ls --updates --app`; one ~2.5 s background call at window startup   |
 |                            | feeds an in-memory `{app_id: {version, branch, origin, commit}}` dict that every    |
 |                            | tab consults for the "Update available" pill. Flat cost regardless of install       |
 |                            | count; lookup is a dict-get per row.                                                |
-| Release notes (newer)      | Flathub aggregated catalog's `<release>` entries — locally-installed metainfo only  |
+| Release notes (newer)      | Flathub aggregated catalog's `<release>` entries; locally-installed metainfo only   |
 |                            | lists releases up to the deployed version, so the "What's new since 1.10.0" diff    |
 |                            | reads from the catalog instead. Window pre-loads the catalog at startup so detail   |
 |                            | pages of updateable apps see it.                                                    |
