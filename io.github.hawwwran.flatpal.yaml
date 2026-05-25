@@ -47,4 +47,4 @@ modules:
       # Mode 2.
       - type: git
         url: https://github.com/hawwwran/flatpal.git
-        tag: v0.2.2
+        tag: v1.0.0
