@@ -160,8 +160,6 @@ class FlatpalWindow(Adw.ApplicationWindow):
         self.settings[key] = value
         user_settings.save(self.settings)
 
-    # ----- GIO actions -----------------------------------------------------
-
     def _build_actions(self):
         s = self.settings
         sort_action = Gio.SimpleAction.new_stateful(
@@ -199,8 +197,6 @@ class FlatpalWindow(Adw.ApplicationWindow):
         )
         running_sort.connect("change-state", self._on_running_sort_changed)
         self.add_action(running_sort)
-
-    # ----- UI scaffold -----------------------------------------------------
 
     def _build_ui(self):
         self.nav_view = Adw.NavigationView()
@@ -323,8 +319,6 @@ class FlatpalWindow(Adw.ApplicationWindow):
         page.set_child(toolbar_view)
         return page
 
-    # ----- behaviour -------------------------------------------------------
-
     def _wire_sort_pill_to_button(self, pill: Gtk.Widget) -> None:
         """Make a Gtk.Label-based sort pill pop the header sort button on click."""
         gesture = Gtk.GestureClick.new()
@@ -410,8 +404,6 @@ class FlatpalWindow(Adw.ApplicationWindow):
             self.running_page.start_tracking()
         else:
             self.running_page.stop_tracking()
-
-    # ----- navigation ------------------------------------------------------
 
     def installed_app_lookup(self, app_id: str):
         """Return the installed-app dict for `app_id`, or None.

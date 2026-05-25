@@ -239,8 +239,6 @@ class DetailPage(Adw.NavigationPage):
 
         self.set_child(toolbar_view)
 
-    # ----- builders --------------------------------------------------------
-
     def _build_header(self, app: dict) -> Adw.HeaderBar:
         header = Adw.HeaderBar()
         header.set_title_widget(Adw.WindowTitle(title=app["name"], subtitle=app["id"]))

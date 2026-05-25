@@ -201,8 +201,6 @@ class RunningPage(Gtk.Box):
         outer_box.append(self.stack)
         self.append(make_list_clamp(outer_box, vexpand=True))
 
-    # ----- public API ------------------------------------------------------
-
     def start_tracking(self) -> None:
         """Begin polling at the current interval. Idempotent."""
         if self._tracker is None:
@@ -298,8 +296,6 @@ class RunningPage(Gtk.Box):
         if self._on_interval_changed:
             self._on_interval_changed(new_seconds)
 
-    # ----- internals -------------------------------------------------------
-
     def _on_tick(self):
         self._refresh()
         return True  # keep running
@@ -389,8 +385,6 @@ class RunningPage(Gtk.Box):
             isinstance(w, Adw.ExpanderRow) and w.get_expanded()
             for w in self._rows.iter_widgets()
         )
-
-    # ----- expander + freeze callbacks ----------------------------------
 
     def _on_expander_toggled(self, _row, _pspec) -> None:
         # Body click toggles the expander; we no longer touch sort or

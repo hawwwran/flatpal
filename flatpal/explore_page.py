@@ -267,8 +267,6 @@ class ExplorePage(Gtk.Box):
         else:
             self._loading_spinner.stop()
 
-    # ----- helpers ---------------------------------------------------------
-
     def _build_list_with_more(self, on_more):
         """Make a ScrolledWindow → Box(listbox + show-more button).
 
@@ -302,8 +300,6 @@ class ExplorePage(Gtk.Box):
 
         scroll.set_child(box)
         return listbox, scroll, more_btn
-
-    # ----- public API ------------------------------------------------------
 
     def ensure_data_loaded(self) -> None:
         """Kick off catalog + popularity fetch on first activation.
@@ -370,8 +366,6 @@ class ExplorePage(Gtk.Box):
 
     def catalog_app(self, app_id: str) -> Optional[dict]:
         return self._data.catalog.get(app_id) if self._data.catalog_loaded else None
-
-    # ----- internals -------------------------------------------------------
 
     def _on_search_changed(self, entry):
         self._last_query = entry.get_text()
@@ -543,8 +537,6 @@ class ExplorePage(Gtk.Box):
             sort_pill_label="sorted by popularity",
             popular_more_label=self._more_label(len(visible), len(all_rows)),
         )
-
-    # ----- helpers --------------------------------------------------------
 
     def _populate_listbox(self, listbox: Gtk.ListBox, entries: list) -> None:
         clear_listbox(listbox)

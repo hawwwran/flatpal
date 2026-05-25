@@ -115,8 +115,6 @@ class ScreenshotViewer(Gtk.Window):
         self._refresh_picture()
         self.connect("map", self._enter_fullscreen)
 
-    # ----- layout ----------------------------------------------------------
-
     def _build_zone_grid(self) -> Gtk.Widget:
         # Equal-width 4 columns, content arranged 1 / 2 / 1 via column spans.
         grid = Gtk.Grid()
@@ -177,8 +175,6 @@ class ScreenshotViewer(Gtk.Window):
             button.add_controller(motion)
 
         return button
-
-    # ----- behaviour -------------------------------------------------------
 
     def _refresh_picture(self):
         current = self._nav.current()

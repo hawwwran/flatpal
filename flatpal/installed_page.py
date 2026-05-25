@@ -153,8 +153,6 @@ class InstalledPage(Gtk.Box):
         scrolled.set_child(make_list_clamp(self.listbox))
         self.append(scrolled)
 
-    # ----- public API ------------------------------------------------------
-
     def set_sort(self, key: str, reverse: bool) -> None:
         self.sort_key = key
         self.reverse = reverse
@@ -179,8 +177,6 @@ class InstalledPage(Gtk.Box):
 
     def installed_ids(self) -> set:
         return {a["id"] for a in self.apps}
-
-    # ----- internals -------------------------------------------------------
 
     def _on_search_changed(self, entry):
         self.query = entry.get_text()

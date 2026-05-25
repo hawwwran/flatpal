@@ -601,8 +601,6 @@ class RunningTracker:
         self._prune_cache(seen_pids)
         return rows
 
-    # ----- internals -------------------------------------------------------
-
     def _get_process(self, pid: int):
         cached = self._proc_cache.get(pid)
         if cached is not None:
