@@ -66,3 +66,8 @@ def setup() -> None:
     logger.addHandler(handler)
     logger.propagate = False
     logger.info("debug log opened at %s", path)
+
+
+def log(msg, *args, **kwargs):
+    """Forward to the flatpal logger. No-op unless FLATPAL_DEBUG is set."""
+    logging.getLogger("flatpal").debug(msg, *args, **kwargs)
