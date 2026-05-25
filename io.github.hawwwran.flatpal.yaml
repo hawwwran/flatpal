@@ -9,6 +9,10 @@ runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
 command: flatpal
+# Match hwnhub's published branch (stable). Without this, flatpak-builder
+# exports on its legacy default 'master' and the bundle/channel branches
+# diverge — flatpak update then can't see new versions on the channel.
+default-branch: stable
 
 finish-args:
   # Standard graphical-app surface.

@@ -17,6 +17,11 @@ runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
 command: flatpal
+# Default branch must match hwnhub's published branch (stable) so the bundle
+# from Mode 1 and the channel build from Mode 2 reference the same OSTree ref —
+# otherwise `flatpak update` queries a non-existent branch on the remote and
+# reports "up to date" even when a newer build is available.
+default-branch: stable
 
 finish-args:
   - --share=ipc
