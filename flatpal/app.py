@@ -1,4 +1,4 @@
-"""GTK4 / libadwaita UI shell. Three tabs (Running, Installed, Explore) wired via Adw.ViewSwitcher."""
+"""GTK4 / libadwaita UI shell. Four tabs (Running, Installed, Explore, Updates) wired via Adw.ViewSwitcher."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from .installed_page import InstalledPage
 from .no_enumerate import NoEnumerateCheck
 from .running_page import RunningPage
 from .updates import fetch_updates
+from .updates_page import UpdatesPage
 
 
 APP_ID = "io.github.hawwwran.flatpal"
@@ -41,6 +42,11 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # until the worker lands.
         self._updates: dict = {}
         self._updates_loaded = False
+        # Guard against re-entering `_start_updates_fetch` while a fetch
+        # is already in flight (the Updates tab's refresh button can
+        # trigger this rapidly; the original startup call is also a
+        # potential concurrent path on slow machines).
+        self._updates_fetching = False
 
         # GTK's default icon-theme search path inside the Flatpak sandbox
         # is /app/share/icons + the runtime — it doesn't include the host's
@@ -67,6 +73,11 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # Push restored prefs into each page (sort, refresh interval,
         # hide-flathub). Done AFTER _build_ui so the pages exist.
         self._apply_restored_settings()
+
+        # Badge starts at zero before the first fetch lands; explicit so
+        # any future libadwaita default change doesn't surface a stale
+        # number through the brief window before `_on_updates_loaded`.
+        self._update_tab_badge()
 
         # Hygiene: cap the on-disk screenshot cache to a few hundred MB so it
         # doesn't grow unbounded over months of Explore browsing. Cheap;
@@ -109,6 +120,10 @@ class FlatpalWindow(Adw.ApplicationWindow):
             self.open_detail_by_id(open_app_id)
 
     def _start_updates_fetch(self) -> None:
+        if self._updates_fetching:
+            return
+        self._updates_fetching = True
+
         def worker():
             try:
                 data = fetch_updates()
@@ -119,6 +134,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
             def finish():
                 self._updates = data
                 self._updates_loaded = True
+                self._updates_fetching = False
                 self._on_updates_loaded()
                 return False
 
@@ -126,22 +142,39 @@ class FlatpalWindow(Adw.ApplicationWindow):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def refresh_updates(self) -> None:
+        """Re-trigger the background `flatpak remote-ls --updates` fetch.
+
+        The Updates tab's refresh button routes here. The Updates page
+        flips to its "Checking for updates…" state immediately; the
+        landing `_on_updates_loaded` repaints every tab once the new
+        dict is in hand. Re-entrant calls during an in-flight fetch
+        are no-ops via the `_updates_fetching` guard.
+        """
+        self.updates_page.notify_refreshing(True)
+        self._start_updates_fetch()
+
     def _on_updates_loaded(self) -> None:
         # Re-render every tab so the badges that depend on the lookup pick
         # up the newly-populated dict. Each page exposes a state-only
         # rerender entry point so we don't pay for another flatpak list /
-        # ps sample just to add a badge.
-        if not self._updates:
-            # Nothing to show — no need to flicker the Running rows or
-            # rebuild any AppRows. The lookup will keep returning None on
-            # every call and the pages already paint without badges.
-            return
+        # ps sample just to add a badge. Always runs — the Updates tab
+        # needs to flip from "loading" to "empty" even when the dict
+        # turns out to be empty, and a manual refresh that yields zero
+        # new updates still needs to clear the page's "refreshing" flag.
         self._repaint_update_badges()
 
     def _repaint_update_badges(self) -> None:
         self.installed_page.refresh()
         self.explore_page.refresh()
         self.running_page.apply_updates_change()
+        self.updates_page.refresh()
+        self._update_tab_badge()
+
+    def _update_tab_badge(self) -> None:
+        n = len(self._updates)
+        self._updates_view_page.set_badge_number(n)
+        self._updates_view_page.set_needs_attention(n > 0)
 
     def updates_lookup(self, app_id: str):
         """Return the update record for `app_id` (or None)."""
@@ -285,6 +318,12 @@ class FlatpalWindow(Adw.ApplicationWindow):
             ),
             updates_lookup=self.updates_lookup,
         )
+        self.updates_page = UpdatesPage(
+            on_row_activated=self._open_detail_for,
+            get_installed_apps=self.installed_page.installed_apps,
+            updates_lookup=self.updates_lookup,
+            parent_window=self,
+        )
 
         # Per-tab sort pills are static labels, but clicking one pops the
         # header's sort button — the pill is the discoverability cue, the
@@ -308,10 +347,16 @@ class FlatpalWindow(Adw.ApplicationWindow):
         self.view_stack.add_titled_with_icon(
             self.explore_page, "explore", "Explore", "system-search-symbolic"
         )
+        # The ViewStackPage handle is kept for badge updates; the others
+        # don't need one because no other tab carries a count.
+        self._updates_view_page = self.view_stack.add_titled_with_icon(
+            self.updates_page, "updates", "Updates",
+            "software-update-available-symbolic",
+        )
         # Restore whichever tab the user last had visible; falls back to
         # "installed" if the stored value is missing or no longer a known tab.
         last_tab = self.settings.get("last_tab", "installed")
-        known = {"running", "installed", "explore"}
+        known = {"running", "installed", "explore", "updates"}
         self.view_stack.set_visible_child_name(
             last_tab if last_tab in known else "installed"
         )
@@ -350,6 +395,8 @@ class FlatpalWindow(Adw.ApplicationWindow):
             self.installed_page.reload()
         elif name == "running":
             self.running_page.refresh_now()
+        elif name == "updates":
+            self.refresh_updates()
         else:
             # Catalog is on-disk and already memoised; just re-render against
             # any fresh installed IDs.
@@ -384,22 +431,28 @@ class FlatpalWindow(Adw.ApplicationWindow):
         installed_active = name == "installed"
         explore_active = name == "explore"
         running_active = name == "running"
+        updates_active = name == "updates"
 
         # Remember the tab for next launch.
         if name and self.settings.get("last_tab") != name:
             self._save_setting("last_tab", name)
 
-        # Sort button stays put; menu swaps per tab.
-        if running_active:
-            self.sort_btn.set_menu_model(self._running_sort_menu)
-            self.sort_btn.set_tooltip_text("Sort running apps")
-        elif explore_active:
-            self.sort_btn.set_menu_model(self._explore_sort_menu)
-            self.sort_btn.set_tooltip_text("Sort Flathub search results")
+        # Sort button stays put; menu swaps per tab. The Updates tab has
+        # no sort menu (rows are inherently sorted alphabetically), so
+        # the button hides instead of carrying a stale model.
+        if updates_active:
+            self.sort_btn.set_visible(False)
         else:
-            self.sort_btn.set_menu_model(self._installed_sort_menu)
-            self.sort_btn.set_tooltip_text("Sort installed apps")
-        self.sort_btn.set_visible(True)
+            if running_active:
+                self.sort_btn.set_menu_model(self._running_sort_menu)
+                self.sort_btn.set_tooltip_text("Sort running apps")
+            elif explore_active:
+                self.sort_btn.set_menu_model(self._explore_sort_menu)
+                self.sort_btn.set_tooltip_text("Sort Flathub search results")
+            else:
+                self.sort_btn.set_menu_model(self._installed_sort_menu)
+                self.sort_btn.set_tooltip_text("Sort installed apps")
+            self.sort_btn.set_visible(True)
 
         # Rebind key-capture so typing only routes to a tab that has a search box.
         self.installed_page.search_bar.set_key_capture_widget(

@@ -178,6 +178,9 @@ class InstalledPage(Gtk.Box):
     def installed_ids(self) -> set:
         return {a["id"] for a in self.apps}
 
+    def installed_apps(self) -> list:
+        return list(self.apps)
+
     def _on_search_changed(self, entry):
         self.query = entry.get_text()
         self._render()
