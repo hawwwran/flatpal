@@ -1,14 +1,12 @@
 """Two groups for the detail page:
 
-- `build_recent_releases_group`: OSTree-commit history from
-  `flatpak remote-info --log`. Each row is a real installable commit
-  so the Downgrade button is always wired to a working target. The
-  detail page populates this from a background worker; the placeholder
-  row shown at construction time is replaced once the log arrives.
+- `build_recent_releases_placeholder` + `populate_recent_releases`:
+  OSTree-commit history from `flatpak remote-info --log`, one row per
+  commit with a Downgrade button. Two-step so the page can render the
+  placeholder synchronously and fill in rows once the worker returns.
 
 - `build_version_history_group`: AppStream `<releases>` metainfo with
-  per-version release notes. Passive rendering: no actions, just the
-  upstream's curated changelog.
+  per-version release notes. No actions, just the upstream changelog.
 
 The top-of-page update card lives in `detail.DetailPage._build_update_box`
 so it can wire its "Update now" button straight into the page's state.
@@ -66,9 +64,7 @@ def build_version_history_group(releases: list) -> Adw.PreferencesGroup:
 def build_recent_releases_placeholder() -> tuple[Adw.PreferencesGroup, Adw.ActionRow]:
     """Build the commits group with a single "Loading…" row.
 
-    The detail page calls this synchronously during page construction and
-    then `populate_recent_releases` once the background worker has
-    returned with the parsed log.
+    Pair with `populate_recent_releases` once the parsed log arrives.
     """
     group = Adw.PreferencesGroup()
     group.set_title("Recent releases")

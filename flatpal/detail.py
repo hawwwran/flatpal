@@ -191,17 +191,9 @@ class DetailPage(Adw.NavigationPage):
         self._update_card: Optional[Gtk.Box] = None
         self._update_button: Optional[Gtk.Button] = None
         self._update_version_row: Optional[Adw.ActionRow] = None
-        # Recent releases (OSTree commit history) downgrade wiring.
-        # `_commits_group` is the section the worker populates; the
-        # placeholder row is replaced once `flatpak remote-info --log`
-        # returns. `_commit_buttons` maps a full commit hash to its
-        # per-row Downgrade button so the click handler can disable it
-        # while the worker thread runs `flatpak update --commit=…`.
         self._commits_group: Optional[Adw.PreferencesGroup] = None
         self._commits_placeholder: Optional[Adw.ActionRow] = None
         self._commit_buttons: dict = {}
-        # `flatpak mask` banner: hidden until the worker confirms this
-        # app is masked, and again after a successful Allow-updates click.
         self._mask_banner: Optional[Adw.Banner] = None
         self.set_title(app["name"])
         self.set_tag(f"detail-{app['id']}")
@@ -229,6 +221,7 @@ class DetailPage(Adw.NavigationPage):
 
         if self.installed:
             self._mask_banner = Adw.Banner(title="Updates are blocked for this app")
+            self._mask_banner.add_css_class("flatpal-mask-banner")
             self._mask_banner.set_button_label("Allow updates")
             self._mask_banner.set_revealed(False)
             self._mask_banner.connect("button-clicked", self._on_unmask_clicked)

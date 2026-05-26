@@ -149,6 +149,16 @@ _PILL_CSS = (
         padding: 16px;
     }
 
+    /* Adw.Banner paints its background on an inner widget node, not on
+       the outer node the CSS class lands on, so the selector descends
+       past the revealer. */
+    .flatpal-mask-banner > revealer > widget {
+        background-color: alpha(@flatpal_terracotta, 0.12);
+        color: @window_fg_color;
+        border: 1px solid alpha(@flatpal_terracotta, 0.35);
+        border-radius: 12px;
+    }
+
     /* Mint-Teal primary action on the update card. Not `.suggested-action`:
        libadwaita's accent is rebound to brand purple at app start, so the
        suggested style would override the Mint we want here. `.pill` from

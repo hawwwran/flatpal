@@ -1,11 +1,10 @@
 """Fetch and parse `flatpak remote-info --log` for a single installed app.
 
-The detail page's "Recent releases" section is built straight from this
-log: each OSTree commit becomes a row with a Downgrade button, so every
-row is guaranteed installable. `fetch_current_commit` returns the
-locally-deployed commit hash so the matching row can be marked
-"Current" instead of getting a button. Failure is silent (same stance as
-`updates.py`): an empty section is better than a crashed app.
+Each OSTree commit in the log becomes a row in the detail page's
+"Recent releases" section, with the locally-deployed commit (from
+`fetch_current_commit`) marked "Current". Failure is silent (same
+stance as `updates.py`): an empty section is better than a crashed
+page.
 """
 
 from __future__ import annotations
@@ -105,10 +104,9 @@ def parse_log(text: str) -> list[dict]:
 
 
 def fetch_current_commit(app_id: str, scope: str) -> Optional[str]:
-    """Run `flatpak info --show-commit` and return the locally-deployed hash.
+    """Run `flatpak info --show-commit` for `app_id` and return the hash.
 
-    Returns None on any failure. Used to mark the matching row "Current"
-    in the Recent releases section.
+    Returns None on any failure.
     """
     return _run_show_commit(_default_runner, app_id, scope)
 
