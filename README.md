@@ -13,6 +13,16 @@ software centre you already use.
 
 </div>
 
+## Install
+
+```sh
+flatpak install --user https://hawwwran.github.io/hwnhub/io.github.hawwwran.flatpal.flatpakref
+```
+
+Pulls Flatpal from **hwnhub**, a small self-hosted Flatpak channel, and
+adds the remote in one step. Runtimes come from Flathub. After install,
+launch from your activities overview or run `flatpal` in a terminal.
+
 ## What you get
 
 ### Running
@@ -100,13 +110,13 @@ Two header buttons:
 - **Open in Software**: hands off to GNOME Software for install,
   uninstall, or update.
 
-## Install (user-local, fully reversible)
+## Install from source
 
 ```sh
 ./install.sh
 ```
 
-Drops these into `~/.local`:
+For development or out-of-channel builds. Drops these into `~/.local`:
 
 | Where                                                                     | What                              |
 | ------------------------------------------------------------------------- | --------------------------------- |
