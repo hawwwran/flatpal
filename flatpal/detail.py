@@ -370,6 +370,11 @@ class DetailPage(Adw.NavigationPage):
         new_v = self.update_info.get("version") or "?"
         origin = self.update_info.get("origin") or "remote"
         current = app.get("version") or "?"
+        rebuild = (
+            current != "?" and new_v != "?"
+            and current.strip().lstrip("vV").lower()
+            == new_v.strip().lstrip("vV").lower()
+        )
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         outer.add_css_class("flatpal-update-card")
@@ -379,7 +384,11 @@ class DetailPage(Adw.NavigationPage):
         header.add_css_class("title-3")
         outer.append(header)
 
-        diff = Gtk.Label(label=f"{current} → {new_v}   ·   on {origin}")
+        diff_text = (
+            f"New build of {new_v}   ·   on {origin}"
+            if rebuild else f"{current} → {new_v}   ·   on {origin}"
+        )
+        diff = Gtk.Label(label=diff_text)
         diff.set_xalign(0.0)
         diff.add_css_class("heading")
         outer.append(diff)
@@ -389,9 +398,23 @@ class DetailPage(Adw.NavigationPage):
         # `releases_since` (no release tags, or installed == latest known)
         # falls through to the "release notes unavailable" branch below so
         # the card doesn't look truncated under the version-diff header.
+        # When the installed and available versions match (the user
+        # downgraded to an older commit of the same release, or Flathub
+        # rebuilt the same version), surface the single release entry so
+        # the card doesn't contradict the Version history group below.
         new_releases = releases_since(meta.get("releases") or [], current)
+        if not new_releases and rebuild:
+            new_releases = [
+                rel for rel in (meta.get("releases") or [])
+                if (rel.get("version") or "").strip().lstrip("vV").lower()
+                == current.strip().lstrip("vV").lower()
+            ][:1]
+            since_label = f"Release notes for {current}"
+        else:
+            since_label = f"What's new since {current}"
+
         if new_releases:
-            since = Gtk.Label(label=f"What's new since {current}")
+            since = Gtk.Label(label=since_label)
             since.set_xalign(0.0)
             since.add_css_class("dim-label")
             since.add_css_class("caption-heading")
@@ -419,7 +442,7 @@ class DetailPage(Adw.NavigationPage):
                     outer.append(body_label)
         else:
             if current == "?":
-                msg = "Installed version unknown — open Software to view release notes."
+                msg = "Installed version unknown. Open Software to view release notes."
             else:
                 msg = "Release notes for the new version aren't available yet."
             note = Gtk.Label(label=msg)
