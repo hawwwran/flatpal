@@ -71,31 +71,48 @@
   <screenshots>
     <screenshot type="default">
       <caption>The Running tab with CPU and memory sampled live for each sandbox</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.0.0/data/screenshots/running-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.1.0/data/screenshots/running-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Installed tab listing every Flatpak with summary and version</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.0.0/data/screenshots/installed-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.1.0/data/screenshots/installed-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>The Explore tab browsing Flathub by popularity</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.0.0/data/screenshots/explore-tab.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.1.0/data/screenshots/explore-tab.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page for an installed app, with the Open app action</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.0.0/data/screenshots/detail.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.1.0/data/screenshots/detail.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page surfacing an available update with the version diff and inline release notes</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.0.0/data/screenshots/detail-update.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.1.0/data/screenshots/detail-update.png</image>
     </screenshot>
     <screenshot>
       <caption>A detail page showing the app's own screenshots and About metadata</caption>
-      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.0.0/data/screenshots/detail2.png</image>
+      <image>https://raw.githubusercontent.com/hawwwran/flatpal/v1.1.0/data/screenshots/detail2.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
+    <release version="1.1.0" date="2026-05-26">
+      <description>
+      <ul>
+        <li>New Updates tab lists every installed app with a pending Flathub update, each row showing the version diff and a one-click Update button; the tab carries a badge with the pending count.</li>
+        <li>The detail page now has an Update now button on the update card so a single app can be updated without leaving the page.</li>
+        <li>Installed-app detail pages gained a Recent releases group listing OSTree commits with per-row Downgrade buttons, plus an optional &quot;Block future updates&quot; checkbox in the confirmation dialog. A banner at the top of masked apps offers an Allow updates button to unmask them.</li>
+      </ul>
+      <ul>
+        <li>The &quot;updates blocked&quot; banner no longer appears on apps whose ID is a prefix of a masked app&#x27;s ID (e.g. `com.example.App` no longer inherits the banner from `com.example.AppExtended`).</li>
+        <li>When Flathub republishes a build without a version bump, the update card now shows &quot;New build of {version}&quot; and surfaces the matching release notes instead of an empty &quot;1.10.2 → 1.10.2&quot; diff.</li>
+        <li>Fixed a crash on launch in the Flatpak build caused by missing module entries in the build manifest.</li>
+      </ul>
+      <ul>
+        <li>The mask banner now uses a soft terracotta wash with rounded corners, matching the update card so the two attention surfaces read as a family.</li>
+      </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-05-25">
       <description>
       <ul>
