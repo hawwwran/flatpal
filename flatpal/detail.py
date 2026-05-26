@@ -20,10 +20,16 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from .core import fetch_remote_options, fix_remote_no_enumerate, format_date
+from .downgrade_runner import run_downgrade, run_unmask
 from .host import host_cmd
 from .metainfo import load_metainfo, system_lang
 from .permissions import parse_flatpak_metadata, summarize_permissions
-from .release_notes import build_releases_group
+from .release_notes import (
+    build_recent_releases_placeholder,
+    build_version_history_group,
+    populate_recent_releases,
+)
+from .remote_log import fetch_current_commit, fetch_is_masked, fetch_log, parse_log
 from .screenshots import build_screenshots_row
 from .update_runner import run_update
 from .updates import releases_since
@@ -185,6 +191,18 @@ class DetailPage(Adw.NavigationPage):
         self._update_card: Optional[Gtk.Box] = None
         self._update_button: Optional[Gtk.Button] = None
         self._update_version_row: Optional[Adw.ActionRow] = None
+        # Recent releases (OSTree commit history) downgrade wiring.
+        # `_commits_group` is the section the worker populates; the
+        # placeholder row is replaced once `flatpak remote-info --log`
+        # returns. `_commit_buttons` maps a full commit hash to its
+        # per-row Downgrade button so the click handler can disable it
+        # while the worker thread runs `flatpak update --commit=…`.
+        self._commits_group: Optional[Adw.PreferencesGroup] = None
+        self._commits_placeholder: Optional[Adw.ActionRow] = None
+        self._commit_buttons: dict = {}
+        # `flatpak mask` banner: hidden until the worker confirms this
+        # app is masked, and again after a successful Allow-updates click.
+        self._mask_banner: Optional[Adw.Banner] = None
         self.set_title(app["name"])
         self.set_tag(f"detail-{app['id']}")
 
@@ -208,6 +226,13 @@ class DetailPage(Adw.NavigationPage):
         body.set_margin_end(16)
 
         body.append(self._build_hero(app, meta))
+
+        if self.installed:
+            self._mask_banner = Adw.Banner(title="Updates are blocked for this app")
+            self._mask_banner.set_button_label("Allow updates")
+            self._mask_banner.set_revealed(False)
+            self._mask_banner.connect("button-clicked", self._on_unmask_clicked)
+            body.append(self._mask_banner)
 
         # Update box sits directly under the hero so the "at a glance" diff
         # (current → new version + release notes since installed) is the
@@ -237,8 +262,15 @@ class DetailPage(Adw.NavigationPage):
         if self.installed and permissions:
             body.append(self._build_permissions_group(permissions))
 
+        if self.installed:
+            commits_group, placeholder = build_recent_releases_placeholder()
+            self._commits_group = commits_group
+            self._commits_placeholder = placeholder
+            body.append(commits_group)
+            threading.Thread(target=self._load_remote_log, daemon=True).start()
+
         if meta["releases"]:
-            body.append(build_releases_group(meta["releases"]))
+            body.append(build_version_history_group(meta["releases"]))
 
         clamp.set_child(body)
         scrolled.set_child(clamp)
@@ -505,6 +537,205 @@ class DetailPage(Adw.NavigationPage):
             row.set_subtitle(GLib.markup_escape_text(new_v) if new_v else "—")
 
         self._update_button = None
+
+    def _load_remote_log(self) -> None:
+        """Worker: fetch the remote OSTree log, deployed commit, mask state."""
+        app_id = self.app["id"]
+        scope = "user" if self.app.get("installation") == "user" else "system"
+        remote = self.app.get("origin", "")
+        text = fetch_log(app_id, scope, remote)
+        records = parse_log(text) if text else []
+        current = fetch_current_commit(app_id, scope) or ""
+        masked = fetch_is_masked(app_id, scope)
+        GLib.idle_add(self._apply_remote_log, records, current, masked)
+
+    def _apply_remote_log(
+        self, records: list, current_commit: str, masked: bool,
+    ) -> bool:
+        if self._commits_group is not None:
+            self._commit_buttons = populate_recent_releases(
+                self._commits_group,
+                self._commits_placeholder,
+                records,
+                on_downgrade=self._on_downgrade_clicked,
+                current_commit=current_commit,
+            )
+            self._commits_placeholder = None
+        self._set_mask_banner(masked)
+        return False
+
+    def _set_mask_banner(self, masked: bool) -> None:
+        if self._mask_banner is None:
+            return
+        self._mask_banner.set_title("Updates are blocked for this app")
+        self._mask_banner.set_button_label("Allow updates")
+        self._mask_banner.set_revealed(bool(masked))
+
+    def _on_unmask_clicked(self, _banner: Adw.Banner) -> None:
+        if self._mask_banner is None:
+            return
+        self._mask_banner.set_title("Allowing updates…")
+        self._mask_banner.set_button_label("")
+
+        app_id = self.app["id"]
+        scope = "user" if self.app.get("installation") == "user" else "system"
+
+        def worker() -> None:
+            ok, err = run_unmask(app_id, scope)
+            GLib.idle_add(self._finish_unmask, ok, err)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_unmask(self, ok: bool, err: Optional[str]) -> bool:
+        if ok:
+            self._set_mask_banner(False)
+            return False
+
+        self._set_mask_banner(True)
+        dialog = Adw.AlertDialog(
+            heading="Could not allow updates",
+            body=(
+                f"`flatpak mask --remove` failed for {self.app['name']}: "
+                + (err or "unknown error")
+            ),
+        )
+        dialog.add_response("ok", "OK")
+        dialog.set_default_response("ok")
+        dialog.set_close_response("ok")
+        dialog.present(self.parent_window)
+        return False
+
+    def _on_downgrade_clicked(self, record: dict) -> None:
+        commit = (record.get("commit") or "").strip()
+        if not commit:
+            return
+        button = self._commit_buttons.get(commit)
+
+        subject = record.get("subject") or "(no subject)"
+        short = commit[:12]
+        date = record.get("date_short") or ""
+        dialog = Adw.AlertDialog(
+            heading=f"Switch {self.app['name']} to commit {short}?",
+            body=(
+                f"Subject: {subject}\n"
+                f"Date:    {date}\n"
+                f"Commit:  {short}\n\n"
+                "Downgrading can fail or lose data if the older version "
+                "can't read the current app data. Make sure you have backups."
+            ),
+        )
+        check = Gtk.CheckButton(label="Block future updates for this app")
+        check.set_active(True)
+        dialog.set_extra_child(check)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("downgrade", "Downgrade")
+        dialog.set_response_appearance("downgrade", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect(
+            "response",
+            self._on_downgrade_response, record, check, button,
+        )
+        dialog.present(self.parent_window)
+
+    def _on_downgrade_response(
+        self,
+        _dialog: Adw.AlertDialog,
+        response_id: str,
+        record: dict,
+        check: Gtk.CheckButton,
+        button: Optional[Gtk.Button],
+    ) -> None:
+        if response_id != "downgrade":
+            return
+        # Read the checkbox eagerly: Adw.AlertDialog disposes the extra
+        # child once the response handler returns.
+        mask_after = bool(check.get_active())
+        commit = (record.get("commit") or "").strip()
+        if not commit:
+            return
+        if button is not None:
+            button.set_sensitive(False)
+            button.set_label("Downgrading…")
+
+        app_id = self.app["id"]
+        scope = "user" if self.app.get("installation") == "user" else "system"
+
+        def worker() -> None:
+            ok, err, masked = run_downgrade(app_id, scope, commit, mask_after)
+            GLib.idle_add(
+                self._finish_downgrade,
+                ok, err, masked, mask_after, record, button,
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_downgrade(
+        self,
+        ok: bool,
+        err: Optional[str],
+        masked: bool,
+        mask_requested: bool,
+        record: dict,
+        button: Optional[Gtk.Button],
+    ) -> bool:
+        commit = (record.get("commit") or "").strip()
+        short = commit[:12] if commit else "?"
+        subject = record.get("subject") or "(no subject)"
+
+        if not ok:
+            if button is not None:
+                button.set_sensitive(True)
+                button.set_label("Downgrade")
+            dialog = Adw.AlertDialog(
+                heading="Downgrade failed",
+                body=(
+                    f"Could not downgrade {self.app['name']}: "
+                    + (err or "unknown error")
+                ),
+            )
+            dialog.add_response("ok", "OK")
+            dialog.set_default_response("ok")
+            dialog.set_close_response("ok")
+            dialog.present(self.parent_window)
+            return False
+
+        if button is not None:
+            button.set_label("Downgraded")
+        installed_page = getattr(self.parent_window, "installed_page", None)
+        if installed_page is not None:
+            installed_page.reload()
+        if masked:
+            self._set_mask_banner(True)
+
+        if mask_requested and not masked:
+            body = (
+                f"Now on commit {short} ({subject}), but blocking future "
+                f"updates failed: {err or 'unknown error'}. The next "
+                "`flatpak update` may roll this app forward again."
+            )
+            heading = "Downgraded (updates not blocked)"
+        elif masked:
+            body = (
+                f"Now on commit {short} ({subject}). Future updates are "
+                f"blocked; to allow updates again, run: flatpak mask "
+                f"--remove {self.app['id']}"
+            )
+            heading = "Downgraded"
+        else:
+            body = (
+                f"Now on commit {short} ({subject}). The next "
+                "`flatpak update` may roll this app forward again unless "
+                "you mask it."
+            )
+            heading = "Downgraded"
+
+        dialog = Adw.AlertDialog(heading=heading, body=body)
+        dialog.add_response("ok", "OK")
+        dialog.set_default_response("ok")
+        dialog.set_close_response("ok")
+        dialog.present(self.parent_window)
+        return False
 
     def _build_remote_no_enumerate_warning(self, app: dict) -> Optional[Gtk.Widget]:
         """Card explaining the bundle-install no-enumerate quirk, with a fix button.
