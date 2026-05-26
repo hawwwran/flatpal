@@ -136,6 +136,9 @@ class FlatpalWindow(Adw.ApplicationWindow):
             # rebuild any AppRows. The lookup will keep returning None on
             # every call and the pages already paint without badges.
             return
+        self._repaint_update_badges()
+
+    def _repaint_update_badges(self) -> None:
         self.installed_page.refresh()
         self.explore_page.refresh()
         self.running_page.apply_updates_change()
@@ -143,6 +146,19 @@ class FlatpalWindow(Adw.ApplicationWindow):
     def updates_lookup(self, app_id: str):
         """Return the update record for `app_id` (or None)."""
         return self._updates.get(app_id) if self._updates_loaded else None
+
+    def clear_update(self, app_id: str) -> None:
+        """Drop `app_id` from the update map and repaint badges across tabs.
+
+        Always repaints, even when the map becomes empty: the last
+        remaining badge still needs to come off the row that triggered
+        the update. This is the distinction from `_on_updates_loaded`,
+        which short-circuits an empty map at startup because the badges
+        were never painted in the first place.
+        """
+        self._updates.pop(app_id, None)
+        self._repaint_update_badges()
+        debuglog.log("cleared update entry for %s", app_id)
 
     def _apply_restored_settings(self):
         s = self.settings

@@ -149,6 +149,24 @@ _PILL_CSS = (
         padding: 16px;
     }
 
+    /* Mint-Teal primary action on the update card. Not `.suggested-action`:
+       libadwaita's accent is rebound to brand purple at app start, so the
+       suggested style would override the Mint we want here. `.pill` from
+       GTK is kept for the rounded shape. */
+    .flatpal-update-button {
+        background-image: none;
+        background-color: @flatpal_mint;
+        color: #FFFFFF;
+        font-weight: 500;
+    }
+    .flatpal-update-button:hover {
+        background-color: shade(@flatpal_mint, 1.10);
+    }
+    .flatpal-update-button:disabled {
+        background-color: alpha(@flatpal_mint, 0.55);
+        color: alpha(#FFFFFF, 0.75);
+    }
+
     .flatpal-freeze-pill {
         padding: 1px 10px;
         border-radius: 9999px;

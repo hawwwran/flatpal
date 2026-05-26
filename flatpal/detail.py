@@ -23,8 +23,10 @@ from .core import fetch_remote_options, fix_remote_no_enumerate, format_date
 from .host import host_cmd
 from .metainfo import load_metainfo, system_lang
 from .permissions import parse_flatpak_metadata, summarize_permissions
-from .release_notes import build_releases_group, build_update_box
+from .release_notes import build_releases_group
 from .screenshots import build_screenshots_row
+from .update_runner import run_update
+from .updates import releases_since
 
 
 def open_in_software(app_id: str) -> None:
@@ -178,6 +180,11 @@ class DetailPage(Adw.NavigationPage):
         self.parent_window = parent_window
         self.installed = installed
         self.update_info = update_info
+        # Populated only when this page renders an update card; the click
+        # handler and the post-success state-flip read these refs.
+        self._update_card: Optional[Gtk.Box] = None
+        self._update_button: Optional[Gtk.Button] = None
+        self._update_version_row: Optional[Adw.ActionRow] = None
         self.set_title(app["name"])
         self.set_tag(f"detail-{app['id']}")
 
@@ -208,7 +215,7 @@ class DetailPage(Adw.NavigationPage):
         # update. Skipped when there's no available update or the app is
         # being viewed from the catalog (Open in Software handles that flow).
         if self.installed and self.update_info:
-            body.append(build_update_box(app, meta, self.update_info))
+            body.append(self._build_update_box(app, meta))
 
         if meta["screenshots"]:
             body.append(build_screenshots_row(
@@ -317,6 +324,187 @@ class DetailPage(Adw.NavigationPage):
         open_btn.connect("clicked", lambda *_: run_flatpak_app(app["id"]))
         row.append(open_btn)
         return row
+
+    def _build_update_box(self, app: dict, meta: dict) -> Gtk.Widget:
+        """Terracotta-tinted callout: current vs new version + release notes
+        and a Mint "Update now" button.
+
+        Lives at the top of the detail body (just under the hero) so the
+        diff is the first thing the user sees on an updateable app. Release
+        notes are inlined (not expanders) so the "what's new since
+        installed" content is readable without an extra click. The button
+        runs `flatpak update` for this single app via `update_runner`.
+        """
+        new_v = self.update_info.get("version") or "?"
+        origin = self.update_info.get("origin") or "remote"
+        current = app.get("version") or "?"
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer.add_css_class("flatpal-update-card")
+
+        header = Gtk.Label(label="Update available")
+        header.set_xalign(0.0)
+        header.add_css_class("title-3")
+        outer.append(header)
+
+        diff = Gtk.Label(label=f"{current} → {new_v}   ·   on {origin}")
+        diff.set_xalign(0.0)
+        diff.add_css_class("heading")
+        outer.append(diff)
+
+        # "What's new since v0.1.0": release notes slice from the metainfo
+        # for everything that landed after the installed version. Empty
+        # `releases_since` (no release tags, or installed == latest known)
+        # falls through to the "release notes unavailable" branch below so
+        # the card doesn't look truncated under the version-diff header.
+        new_releases = releases_since(meta.get("releases") or [], current)
+        if new_releases:
+            since = Gtk.Label(label=f"What's new since {current}")
+            since.set_xalign(0.0)
+            since.add_css_class("dim-label")
+            since.add_css_class("caption-heading")
+            since.set_margin_top(8)
+            outer.append(since)
+
+            for rel in new_releases:
+                ver_label = Gtk.Label()
+                ver_label.set_markup(
+                    f"<b>{GLib.markup_escape_text(rel['version'] or '—')}</b>"
+                    + (
+                        f"  <span alpha='65%'>· {GLib.markup_escape_text(rel['date'])}</span>"
+                        if rel.get("date") else ""
+                    )
+                )
+                ver_label.set_xalign(0.0)
+                ver_label.set_margin_top(6)
+                outer.append(ver_label)
+
+                if rel.get("description_markup"):
+                    body_label = Gtk.Label(label=rel["description_markup"])
+                    body_label.set_wrap(True)
+                    body_label.set_xalign(0.0)
+                    body_label.add_css_class("body")
+                    outer.append(body_label)
+        else:
+            if current == "?":
+                msg = "Installed version unknown — open Software to view release notes."
+            else:
+                msg = "Release notes for the new version aren't available yet."
+            note = Gtk.Label(label=msg)
+            note.set_xalign(0.0)
+            note.add_css_class("dim-label")
+            note.set_wrap(True)
+            note.set_margin_top(8)
+            outer.append(note)
+
+        button_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        button_row.set_halign(Gtk.Align.START)
+        button_row.set_margin_top(12)
+
+        scope = "user" if app.get("installation") == "user" else "system"
+        update_btn = Gtk.Button(label="Update now")
+        update_btn.add_css_class("pill")
+        update_btn.add_css_class("flatpal-update-button")
+        update_btn.set_tooltip_text(
+            f"flatpak update --{scope} {app['id']}"
+        )
+        update_btn.connect("clicked", self._on_update_clicked)
+        button_row.append(update_btn)
+        outer.append(button_row)
+
+        self._update_card = outer
+        self._update_button = update_btn
+        return outer
+
+    def _on_update_clicked(self, _button: Gtk.Button) -> None:
+        """Run `flatpak update` for this app from a worker thread."""
+        # `not get_sensitive()` guards against a sub-frame double-click that
+        # races past GTK's own sensitivity gate before the first handler can
+        # disable the button.
+        if self._update_button is None or not self._update_button.get_sensitive():
+            return
+        self._update_button.set_sensitive(False)
+        self._update_button.set_label("Updating…")
+
+        app_id = self.app["id"]
+        scope = "user" if self.app.get("installation") == "user" else "system"
+
+        def worker() -> None:
+            ok, err = run_update(app_id, scope)
+            GLib.idle_add(self._finish_update, ok, err)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_update(self, ok: bool, err: Optional[str]) -> bool:
+        if ok:
+            new_v = (self.update_info or {}).get("version") or ""
+            # `self.app` is the same dict cached by `InstalledPage`; mutating
+            # `version` here is what lets the row paint the new version after
+            # `clear_update` calls `installed_page.refresh()` below.
+            self.app["version"] = new_v or self.app.get("version", "")
+            self._show_update_success()
+            self.parent_window.clear_update(self.app["id"])
+        else:
+            if self._update_button is not None:
+                self._update_button.set_sensitive(True)
+                self._update_button.set_label("Update now")
+            dialog = Adw.AlertDialog(
+                heading="Update failed",
+                body=(
+                    f"Could not update {self.app['name']}: "
+                    + (err or "unknown error")
+                ),
+            )
+            dialog.add_response("ok", "OK")
+            dialog.set_default_response("ok")
+            dialog.set_close_response("ok")
+            dialog.present(self.parent_window)
+        return False
+
+    def _show_update_success(self) -> None:
+        """Replace the update card contents with a success state in place.
+
+        The card stays in the body (no widget removal) so the user's
+        scroll position is preserved; only the contents swap. The About-
+        group "Version (update available)" row flips back to plain
+        "Version" with the new version.
+        """
+        new_v = (self.update_info or {}).get("version") or "?"
+        origin = (self.update_info or {}).get("origin") or "remote"
+
+        card = self._update_card
+        if card is not None:
+            child = card.get_first_child()
+            while child is not None:
+                nxt = child.get_next_sibling()
+                card.remove(child)
+                child = nxt
+
+            header = Gtk.Label(label="✓ Updated")
+            header.set_xalign(0.0)
+            header.add_css_class("title-3")
+            card.append(header)
+
+            diff = Gtk.Label(label=f"Now on {new_v}   ·   from {origin}")
+            diff.set_xalign(0.0)
+            diff.add_css_class("heading")
+            card.append(diff)
+
+            note = Gtk.Label(
+                label="The new version is ready. Restart the app to pick it up."
+            )
+            note.set_xalign(0.0)
+            note.set_wrap(True)
+            note.add_css_class("dim-label")
+            note.set_margin_top(8)
+            card.append(note)
+
+        row = self._update_version_row
+        if row is not None:
+            row.set_title("Version")
+            row.set_subtitle(GLib.markup_escape_text(new_v) if new_v else "—")
+
+        self._update_button = None
 
     def _build_remote_no_enumerate_warning(self, app: dict) -> Optional[Gtk.Widget]:
         """Card explaining the bundle-install no-enumerate quirk, with a fix button.
@@ -463,6 +651,9 @@ class DetailPage(Adw.NavigationPage):
                 )
             else:
                 ver_row = row("Version", app.get("version", ""))
+            # Stashed for the post-success row flip back to the plain
+            # "Version" form once `flatpak update` lands.
+            self._update_version_row = ver_row
             group.add(ver_row)
             group.add(row("Size", app.get("size_str", "")))
             group.add(row("Installed", format_date(app.get("installed"))))
