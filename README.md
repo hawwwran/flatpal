@@ -20,8 +20,8 @@ flatpak install --user https://hawwwran.github.io/hwnhub/io.github.hawwwran.flat
 ```
 
 Pulls Flatpal from **hwnhub**, a small self-hosted Flatpak channel, and
-adds the remote in one step. Runtimes come from Flathub. After install,
-launch from your activities overview or run `flatpal` in a terminal.
+adds the remote in one step. After install, launch from your activities
+overview or run `flatpal` in a terminal.
 
 ## What you get
 
