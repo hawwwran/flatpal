@@ -157,7 +157,19 @@ def _run_mask_list(
     if res.returncode != 0:
         return False
     needle = app_id.strip()
+    if not needle:
+        return False
+    # Bare-id and ref-style mask patterns only; wildcard patterns
+    # (`com.example.*`) fall through to False, which mirrors how a
+    # plain substring check would have missed them anyway.
+    ref_prefix = f"app/{needle}/"
+    ref_exact = f"app/{needle}"
     for line in (res.stdout or "").splitlines():
-        if needle and needle in line:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped == needle or stripped == ref_exact:
+            return True
+        if stripped.startswith(ref_prefix):
             return True
     return False

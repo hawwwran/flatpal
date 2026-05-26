@@ -245,9 +245,21 @@ class TestMaskList(unittest.TestCase):
         out = "com.discordapp.Discord\norg.example.App\n"
         self.assertTrue(_run_mask_list(lambda argv: _ok(out), "org.example.App", "user"))
 
-    def test_substring_match_within_ref(self):
+    def test_match_full_ref_with_arch_and_branch(self):
         out = "app/org.example.App/x86_64/stable\n"
         self.assertTrue(_run_mask_list(lambda argv: _ok(out), "org.example.App", "system"))
+
+    def test_match_bare_app_ref(self):
+        out = "app/org.example.App\n"
+        self.assertTrue(_run_mask_list(lambda argv: _ok(out), "org.example.App", "system"))
+
+    def test_does_not_match_longer_app_id(self):
+        out = "com.example.AppExtended\n"
+        self.assertFalse(_run_mask_list(lambda argv: _ok(out), "com.example.App", "user"))
+
+    def test_does_not_match_longer_app_id_in_ref(self):
+        out = "app/com.example.AppExtended/x86_64/stable\n"
+        self.assertFalse(_run_mask_list(lambda argv: _ok(out), "com.example.App", "user"))
 
     def test_no_match(self):
         out = "com.other.App\n"

@@ -25,11 +25,12 @@ from gi.repository import Adw, Gtk  # noqa: E402
 
 
 _BUILD_HASH_SUFFIX = re.compile(r"\s*\([0-9a-fA-F]{4,}\)\s*$")
+NO_SUBJECT = "(no subject)"
 
 
 def _clean_subject(subject: str) -> str:
     """Strip the Flathub trailing `(deadbeef…)` build-id from a commit subject."""
-    return _BUILD_HASH_SUFFIX.sub("", subject or "").strip() or "(no subject)"
+    return _BUILD_HASH_SUFFIX.sub("", subject or "").strip() or NO_SUBJECT
 
 
 def build_version_history_group(releases: list) -> Adw.PreferencesGroup:

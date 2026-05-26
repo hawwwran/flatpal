@@ -25,6 +25,7 @@ from .host import host_cmd
 from .metainfo import load_metainfo, system_lang
 from .permissions import parse_flatpak_metadata, summarize_permissions
 from .release_notes import (
+    NO_SUBJECT,
     build_recent_releases_placeholder,
     build_version_history_group,
     populate_recent_releases,
@@ -627,7 +628,7 @@ class DetailPage(Adw.NavigationPage):
             return
         button = self._commit_buttons.get(commit)
 
-        subject = record.get("subject") or "(no subject)"
+        subject = record.get("subject") or NO_SUBJECT
         short = commit[:12]
         date = record.get("date_short") or ""
         dialog = Adw.AlertDialog(
@@ -697,7 +698,7 @@ class DetailPage(Adw.NavigationPage):
     ) -> bool:
         commit = (record.get("commit") or "").strip()
         short = commit[:12] if commit else "?"
-        subject = record.get("subject") or "(no subject)"
+        subject = record.get("subject") or NO_SUBJECT
 
         if not ok:
             if button is not None:
