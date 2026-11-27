@@ -96,6 +96,15 @@
   </screenshots>
 
   <releases>
+    <release version="1.1.1" date="2026-11-27T15:06:04Z">
+      <description>
+        <ul>
+          <li>Updates now show the version actually being offered. Right after a new release was published, an update could appear under the previous version number; Flatpal now refreshes the remote's catalog and shows the correct version.</li>
+          <li>The Reload button in the header now refreshes the catalogs of all remotes and checks for updates on every tab, not only the Updates tab. If you press it while a check is running, it runs once that check finishes.</li>
+          <li>Release notes for an installed app now come from the remote it was installed from, so updates from remotes other than Flathub also show what's new.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-05-26">
       <description>
       <ul>
