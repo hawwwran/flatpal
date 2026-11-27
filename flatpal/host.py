@@ -25,6 +25,7 @@ def is_sandboxed() -> bool:
 def host_cmd(
     cmd: Sequence[str],
     env: Optional[Dict[str, str]] = None,
+    watch_bus: bool = False,
 ) -> List[str]:
     """Return argv to run `cmd` on the host.
 
@@ -40,5 +41,8 @@ def host_cmd(
     """
     if is_sandboxed():
         env_args = [f"--env={k}={v}" for k, v in (env or {}).items()]
-        return ["flatpak-spawn", "--host", *env_args, *cmd]
+        # --watch-bus: the host command ends when this process does (a timeout
+        # kills flatpak-spawn, which would otherwise leave the command running).
+        watch = ["--watch-bus"] if watch_bus else []
+        return ["flatpak-spawn", "--host", *watch, *env_args, *cmd]
     return list(cmd)

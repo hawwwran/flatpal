@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import threading
+import zlib
 
 import gi
 
@@ -13,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
+from . import catalog as catalogs
 from . import debuglog
 from . import settings as user_settings
 from .cache import prune_cache
@@ -20,9 +22,10 @@ from .constants import SCREENSHOT_CACHE_MAX_BYTES
 from .detail import DetailPage
 from .explore_page import ExplorePage
 from .installed_page import InstalledPage
+from .metainfo import system_lang
 from .no_enumerate import NoEnumerateCheck
 from .running_page import RunningPage
-from .updates import fetch_updates
+from .updates import fetch_updates, read_updates, refresh_catalogs, update_origins
 from .updates_page import UpdatesPage
 
 
@@ -47,6 +50,7 @@ class FlatpalWindow(Adw.ApplicationWindow):
         # trigger this rapidly; the original startup call is also a
         # potential concurrent path on slow machines).
         self._updates_fetching = False
+        self._refresh_all_pending = False
 
         # GTK's default icon-theme search path inside the Flatpak sandbox
         # is /app/share/icons + the runtime — it doesn't include the host's
@@ -119,40 +123,92 @@ class FlatpalWindow(Adw.ApplicationWindow):
         if open_app_id:
             self.open_detail_by_id(open_app_id)
 
-    def _start_updates_fetch(self) -> None:
+    def _start_updates_fetch(self, refresh_all_catalogs: bool = False) -> None:
         if self._updates_fetching:
+            # A Reload during the startup check still gets its full refresh.
+            self._refresh_all_pending |= refresh_all_catalogs
             return
         self._updates_fetching = True
+        lang = system_lang()
 
-        def worker():
-            try:
-                data = fetch_updates()
-            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-                debuglog.log("updates fetch failed: %r", exc)
-                data = {}
+        def deliver(data: dict, refreshed, final: bool) -> None:
+            """Hand a list to the main thread. `refreshed`: the remotes whose
+            catalogs were refreshed for it (None = all, empty = none)."""
 
             def finish():
+                if refreshed is None or "flathub" in refreshed:
+                    self.explore_page.reload_catalog()
                 self._updates = data
                 self._updates_loaded = True
-                self._updates_fetching = False
+                if final:
+                    self._updates_fetching = False
                 self._on_updates_loaded()
+                if final and self._refresh_all_pending:
+                    self._refresh_all_pending = False
+                    self.refresh_updates(refresh_all_catalogs=True)
                 return False
 
             GLib.idle_add(finish)
 
+        def warm(remotes) -> None:
+            # Parse the refreshed non-Flathub catalogs here, off the main
+            # thread, so an update's detail page finds its release notes.
+            for remote in remotes:
+                if remote == "flathub":
+                    continue
+                try:
+                    catalogs.load_catalog(lang=lang, remote=remote, force=True)
+                except (OSError, EOFError, zlib.error) as exc:
+                    debuglog.log("catalog of %s unreadable: %r", remote, exc)
+
+        def worker():
+            data: dict = {}
+            finished = False
+            try:
+                if refresh_all_catalogs:
+                    refresh_catalogs(None)
+                    data = fetch_updates()
+                    warm(update_origins(data))
+                    deliver(data, None, final=True)
+                    finished = True
+                    return
+                data = fetch_updates()
+                origins = update_origins(data)
+                if not origins:
+                    deliver(data, set(), final=True)
+                    finished = True
+                    return
+                # Show the updates at once; their versions may lag until the
+                # catalogs are refreshed, then the list is read again.
+                deliver(data, set(), final=False)
+                refreshed = refresh_catalogs(origins)
+                again = read_updates()
+                data = data if again is None else again
+                warm(refreshed)
+                deliver(data, refreshed, final=True)
+                finished = True
+            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                debuglog.log("updates fetch failed: %r", exc)
+            finally:
+                # Whatever went wrong, end the fetch, or no later check could start.
+                if not finished:
+                    deliver(data, set(), final=True)
+
         threading.Thread(target=worker, daemon=True).start()
 
-    def refresh_updates(self) -> None:
+    def refresh_updates(self, refresh_all_catalogs: bool = False) -> None:
         """Re-trigger the background `flatpak remote-ls --updates` fetch.
 
-        The Updates tab's refresh button routes here. The Updates page
-        flips to its "Checking for updates…" state immediately; the
-        landing `_on_updates_loaded` repaints every tab once the new
-        dict is in hand. Re-entrant calls during an in-flight fetch
-        are no-ops via the `_updates_fetching` guard.
+        The Updates tab's refresh button routes here, and the header's Reload
+        with `refresh_all_catalogs`, which refreshes every remote's catalog
+        first. The Updates page flips to its "Checking for updates…" state
+        immediately; the landing `_on_updates_loaded` repaints every tab once
+        the new dict is in hand. A call during an in-flight fetch is dropped
+        via the `_updates_fetching` guard, except a Reload's full refresh,
+        which runs once that fetch ends.
         """
         self.updates_page.notify_refreshing(True)
-        self._start_updates_fetch()
+        self._start_updates_fetch(refresh_all_catalogs)
 
     def _on_updates_loaded(self) -> None:
         # Re-render every tab so the badges that depend on the lookup pick
@@ -395,12 +451,12 @@ class FlatpalWindow(Adw.ApplicationWindow):
             self.installed_page.reload()
         elif name == "running":
             self.running_page.refresh_now()
-        elif name == "updates":
-            self.refresh_updates()
-        else:
-            # Catalog is on-disk and already memoised; just re-render against
-            # any fresh installed IDs.
+        elif name != "updates":
+            # The catalog reloads once the refresh below has updated it.
             self.explore_page.refresh()
+        # Reload also refreshes every remote's catalog and the update list,
+        # whichever tab is showing.
+        self.refresh_updates(refresh_all_catalogs=True)
 
     def _on_sort_changed(self, action, value):
         action.set_state(value)
@@ -491,10 +547,23 @@ class FlatpalWindow(Adw.ApplicationWindow):
         page = DetailPage.from_installed(
             app,
             parent_window=self,
-            catalog_lookup=self.explore_page.catalog_app,
+            catalog_lookup=lambda app_id: self._catalog_entry(app, app_id),
             updates_lookup=self.updates_lookup,
         )
         self.nav_view.push(page)
+
+    def _catalog_entry(self, app: dict, app_id: str):
+        """The catalog entry for an installed app, from the remote it came from:
+        Flathub's from Explore's parsed copy, another remote's (hwnhub, Zorin)
+        only if the update check already parsed it; never read here, on the
+        main thread."""
+        origin = app.get("origin")
+        if not origin:
+            return None
+        if origin == "flathub":
+            return self.explore_page.catalog_app(app_id)
+        catalog = catalogs.cached_catalog(origin, lang=system_lang())
+        return catalog.get(app_id) if catalog else None
 
     def _open_detail_for_explore(self, entry: dict) -> None:
         """Called by ExplorePage. If the app is already installed, route via

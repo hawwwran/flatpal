@@ -5,6 +5,13 @@ remote ref is newer than what's deployed locally. The cost is ~2.5 s and it
 isn't per-app, so a single background fetch at startup is enough to feed the
 "Update available" badges across all three tabs and the detail page.
 
+Flatpak finds the updates from each remote's summary, fetched fresh, but takes
+the `version` column from this machine's copy of the remote's AppStream
+catalog, which it refreshes about once a day. Right after a publish that copy
+still names the previous release, so an update would show the old version
+number. So when updates turn up, `refresh_catalogs` refreshes their remotes'
+catalogs and the caller reads the list again.
+
 Failure is silent: a missing badge is better than a crashed app, and the
 flatpak command can fail for legitimate reasons (no remotes configured, no
 network on first launch with empty appstream cache, …).
@@ -13,7 +20,9 @@ network on first launch with empty appstream cache, …).
 from __future__ import annotations
 
 import subprocess
-from typing import Callable, Optional
+import threading
+import time
+from typing import Callable, Iterable, List, Optional, Set
 
 from .host import host_cmd
 
@@ -33,6 +42,64 @@ def fetch_updates() -> dict:
     return _fetch(_run)
 
 
+def read_updates() -> Optional[dict]:
+    """Like `fetch_updates`, but None when the read failed, which `{}` (no
+    updates left) must not be mistaken for."""
+    text = _run()
+    return None if text is None else _parse(text)
+
+
+# One deadline for all the catalog refreshes together: each remote is a network
+# fetch, and the Updates page waits for the corrected list.
+REFRESH_DEADLINE_S = 60
+
+
+def update_origins(updates: dict) -> Set[str]:
+    """The remotes the updates come from, for refreshing their catalogs."""
+    return {info["origin"] for info in updates.values() if info.get("origin")}
+
+
+def refresh_catalogs(remotes: Optional[Iterable[str]]) -> Optional[Set[str]]:
+    """Refresh these remotes' catalogs (all remotes with None), in parallel.
+
+    Returns the remotes asked for, or None for all of them. A refresh that
+    fails or outlasts `REFRESH_DEADLINE_S` is left behind; the list is then
+    read with whatever catalog is there.
+    """
+    return _refresh(remotes, _run_refresh, REFRESH_DEADLINE_S)
+
+
+def _refresh(
+    remotes: Optional[Iterable[str]],
+    runner: Callable[[Optional[str]], None],
+    deadline_s: float,
+) -> Optional[Set[str]]:
+    targets: List[Optional[str]] = [None] if remotes is None else sorted(set(remotes))
+    threads = [threading.Thread(target=runner, args=(t,), daemon=True) for t in targets]
+    for t in threads:
+        t.start()
+    end = time.monotonic() + deadline_s
+    for t in threads:
+        t.join(max(0.0, end - time.monotonic()))
+    return None if remotes is None else set(targets)
+
+
+def _run_refresh(remote: Optional[str]) -> None:
+    """`flatpak update --appstream [remote]`. No password: polkit lets the active
+    session update catalogs. `watch_bus` ends the host command if this one is
+    killed, so a timed-out refresh doesn't keep holding the repo lock."""
+    cmd = ["flatpak", "update", "--appstream", "--noninteractive"]
+    if remote:
+        cmd.append(remote)
+    try:
+        subprocess.run(
+            host_cmd(cmd, watch_bus=True), capture_output=True, text=True,
+            check=False, timeout=REFRESH_DEADLINE_S,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def _run() -> Optional[str]:
     try:
         res = subprocess.run(
@@ -42,7 +109,7 @@ def _run() -> Optional[str]:
             ]),
             capture_output=True, text=True, check=False, timeout=30,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired):
         return None
     if res.returncode != 0:
         return None

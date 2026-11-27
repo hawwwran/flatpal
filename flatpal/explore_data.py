@@ -32,6 +32,8 @@ class CatalogManager:
         self.catalog: dict = {}
         self.catalog_loaded = False
         self.catalog_loading = False
+        # A reload asked for while a load runs: that load may have read the old file.
+        self.catalog_reload_pending = False
         self.popularity_hits: list = []
         self.popularity_idx: dict = {}
         self.popularity_loaded = False
@@ -42,12 +44,25 @@ class CatalogManager:
     def ensure_catalog(self) -> None:
         if self.catalog_loaded or self.catalog_loading:
             return
+        self._load_catalog(force=False)
+
+    def reload_catalog(self) -> None:
+        """Read the catalog again after Flatpak refreshed it; the old one stays
+        in use until the new one is parsed."""
+        if self.catalog_loading:
+            self.catalog_reload_pending = True
+            return
+        if not self.catalog_loaded:
+            return
+        self._load_catalog(force=True)
+
+    def _load_catalog(self, force: bool) -> None:
         self.catalog_loading = True
         lang = system_lang()
 
         def worker():
             try:
-                data = load_catalog(lang=lang)
+                data = load_catalog(lang=lang, force=force)
             except (OSError, ET.ParseError) as exc:
                 debuglog.log("catalog load failed: %r", exc)
                 data = {}
@@ -57,6 +72,9 @@ class CatalogManager:
                 self.catalog_loaded = True
                 self.catalog_loading = False
                 self._on_loaded()
+                if self.catalog_reload_pending:
+                    self.catalog_reload_pending = False
+                    self._load_catalog(force=True)
                 return False
 
             GLib.idle_add(finish)

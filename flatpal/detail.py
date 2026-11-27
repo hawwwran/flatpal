@@ -120,8 +120,8 @@ class DetailPage(Adw.NavigationPage):
         AppStream XML, and sandbox permissions from `flatpak info -m`.
 
         `catalog_lookup(app_id) -> dict | None` overrides the locally-
-        installed metainfo's release list with the Flathub catalog's view
-        when available; the catalog reflects the remote's current state
+        installed metainfo's release list with the catalog of the app's
+        origin remote when available; the catalog reflects the remote's current state
         so the "What's new since {installed}" body picks up releases that
         landed after the local install. Race: the catalog loads from a
         background worker (~1 s of local IO); a detail page opened within

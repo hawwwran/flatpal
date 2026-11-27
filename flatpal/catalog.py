@@ -1,4 +1,4 @@
-"""Flathub appstream catalog loader.
+"""AppStream catalog loader: Flathub's for Explore, any remote's for an app from it.
 
 Parses the aggregated `appstream.xml.gz` shipped by Flatpak into a dict keyed
 by app-id. Reuses `metainfo.parse_component` so catalog entries have the same
@@ -18,8 +18,8 @@ from typing import Iterable, List, Optional
 from .metainfo import parse_component
 
 
-# Flatpak ships the Flathub catalog at one of two locations depending on
-# whether the user added the remote system-wide or `--user`. Architecture
+# Flatpak keeps each remote's catalog at one of two locations depending on
+# whether the remote was added system-wide or `--user`. Architecture
 # matches `os.uname().machine` (x86_64, aarch64, …).
 _FLATPAK_BASES: tuple = (
     Path("/var/lib/flatpak"),
@@ -31,18 +31,18 @@ ICON_SIZES = ("128x128", "64x64")
 _CACHE: dict = {}
 
 
-def _catalog_candidates() -> List[Path]:
+def _catalog_candidates(remote: str = "flathub") -> List[Path]:
     """Possible appstream.xml.gz locations, in priority order (system first)."""
     return [
-        base / "appstream" / "flathub" / ARCH / "active" / "appstream.xml.gz"
+        base / "appstream" / remote / ARCH / "active" / "appstream.xml.gz"
         for base in _FLATPAK_BASES
     ]
 
 
-def _icon_root_candidates() -> List[Path]:
+def _icon_root_candidates(remote: str = "flathub") -> List[Path]:
     """Possible icon-cache roots, parallel to the catalog locations."""
     return [
-        base / "appstream" / "flathub" / ARCH / "active" / "icons"
+        base / "appstream" / remote / ARCH / "active" / "icons"
         for base in _FLATPAK_BASES
     ]
 
@@ -75,6 +75,7 @@ def parse_catalog(
     source,
     lang: Optional[str] = None,
     icon_root: Optional[Path] = None,
+    icon_roots: Optional[Iterable[Path]] = None,
 ) -> dict:
     """Parse `<components>…</components>` XML into `{app_id: entry}`.
 
@@ -114,7 +115,9 @@ def parse_catalog(
             entry = parse_component(elem, lang)
             app_id = entry["id"]
             if app_id:
-                entry["cached_icon"] = catalog_icon_path(app_id, icon_root=icon_root)
+                entry["cached_icon"] = catalog_icon_path(
+                    app_id, icon_root=icon_root, icon_roots=icon_roots,
+                )
                 out[app_id] = entry
             elem.clear()
             root_elem.remove(elem)
@@ -128,8 +131,10 @@ def load_catalog(
     *,
     path: Optional[Path] = None,
     force: bool = False,
+    remote: str = "flathub",
 ) -> dict:
-    """Read + parse the on-disk Flathub catalog. Memoized per-lang.
+    """Read + parse the on-disk catalog of `remote` (Flathub's by default).
+    Memoized per remote and lang.
 
     `path` overrides the default search (system → user). When omitted we try
     each candidate in order and use the first one that opens; this covers
@@ -137,18 +142,20 @@ def load_catalog(
 
     Returns an empty dict if no catalog is readable.
     """
-    cache_key = (lang, str(path) if path else "auto")
+    cache_key = (lang, str(path) if path else f"auto:{remote}")
     if not force and cache_key in _CACHE:
         return _CACHE[cache_key]
 
-    candidates: List[Path] = [path] if path is not None else _catalog_candidates()
+    candidates: List[Path] = [path] if path is not None else _catalog_candidates(remote)
     parsed: Optional[dict] = None
     for target in candidates:
         try:
             # Stream the gzip output straight into iterparse so peak memory
             # stays bounded; the full catalog is ~50 MB decompressed.
             with gzip.open(target, "rb") as f:
-                parsed = parse_catalog(f, lang=lang)
+                parsed = parse_catalog(
+                    f, lang=lang, icon_roots=_icon_root_candidates(remote),
+                )
             break
         except (OSError, EOFError):
             continue
@@ -161,6 +168,12 @@ def load_catalog(
     return parsed
 
 
+def cached_catalog(remote: str, lang: Optional[str] = None) -> Optional[dict]:
+    """The memoised catalog of `remote`, or None when it hasn't been read yet.
+    Never reads the disk, so the main thread can ask."""
+    return _CACHE.get((lang, f"auto:{remote}"))
+
+
 def clear_cache() -> None:
-    """Drop the memoized catalog. Used by tests to keep instances isolated."""
+    """Drop the memoized catalogs. Used by tests to keep instances isolated."""
     _CACHE.clear()

@@ -4,9 +4,14 @@ The subprocess shell-out itself is impure (and slow — ~2.5 s) so the
 parser is tested against canned output fixtures.
 """
 
+import threading
+import time
 import unittest
+from unittest import mock
 
-from flatpal.updates import _fetch, _parse, releases_since
+from flatpal.updates import (
+    _fetch, _parse, _refresh, _run_refresh, releases_since, update_origins,
+)
 
 
 SAMPLE_TWO_APPS = (
@@ -97,6 +102,47 @@ class TestReleasesSince(unittest.TestCase):
         rels = [self._rel("v2.0"), self._rel("v1.5"), self._rel("v1.0")]
         out = releases_since(rels, "1.5")
         self.assertEqual([r["version"] for r in out], ["v2.0"])
+
+
+class CatalogRefreshTests(unittest.TestCase):
+    """The version column comes from the local catalog copy, so the remotes with
+    updates get their catalogs refreshed before the list is read again."""
+
+    def test_origins_skip_blank_ones(self):
+        found = _parse("a.App\t1\tstable\thwnhub\tc\nb.App\t2\tstable\t\tc\n")
+        self.assertEqual(update_origins(found), {"hwnhub"})
+
+    def test_refreshes_each_remote_once(self):
+        ran = []
+        out = _refresh(["hwnhub", "flathub", "hwnhub"], ran.append, deadline_s=5)
+        self.assertEqual(sorted(ran), ["flathub", "hwnhub"])
+        self.assertEqual(out, {"flathub", "hwnhub"})
+
+    def test_none_refreshes_every_remote(self):
+        ran = []
+        self.assertIsNone(_refresh(None, ran.append, deadline_s=5))
+        self.assertEqual(ran, [None])
+
+    def test_a_slow_refresh_is_left_behind_at_the_deadline(self):
+        gate = threading.Event()
+        started = time.monotonic()
+        _refresh(["slow"], lambda _remote: gate.wait(5), deadline_s=0.1)
+        self.assertLess(time.monotonic() - started, 2)
+        gate.set()
+
+    def test_refresh_command_names_the_remote(self):
+        with mock.patch("flatpal.updates.subprocess.run") as run, \
+                mock.patch("flatpal.updates.host_cmd", side_effect=lambda cmd, **_: cmd):
+            _run_refresh("hwnhub")
+            _run_refresh(None)
+        argv = [c.args[0] for c in run.call_args_list]
+        refresh = ["flatpak", "update", "--appstream", "--noninteractive"]
+        self.assertEqual(argv[0], refresh + ["hwnhub"])
+        self.assertEqual(argv[1], refresh)
+
+    def test_refresh_failures_are_swallowed(self):
+        with mock.patch("flatpal.updates.subprocess.run", side_effect=PermissionError):
+            _run_refresh("hwnhub")
 
 
 if __name__ == "__main__":

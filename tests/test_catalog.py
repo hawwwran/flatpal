@@ -241,5 +241,33 @@ class TestIconRoots(unittest.TestCase):
             self.assertEqual(found, first)
 
 
+class RemoteCatalogTests(unittest.TestCase):
+    def setUp(self):
+        catalog.clear_cache()
+        self.addCleanup(catalog.clear_cache)
+
+    def test_candidates_follow_the_remote(self):
+        hub = catalog._catalog_candidates("hwnhub")
+        self.assertTrue(all("/appstream/hwnhub/" in str(p) for p in hub))
+        flathub = catalog._catalog_candidates()
+        self.assertTrue(all("/appstream/flathub/" in str(p) for p in flathub))
+
+    def test_remotes_are_memoised_apart(self):
+        import unittest.mock as _mock
+        with tempfile.TemporaryDirectory() as tmp:
+            gz = Path(tmp) / "hub.xml.gz"
+            with gzip.open(gz, "wt", encoding="utf-8") as f:
+                f.write(SAMPLE_CATALOG)
+
+            def candidates(remote="flathub"):
+                return [gz] if remote == "hwnhub" else [Path(tmp) / "none.xml.gz"]
+
+            with _mock.patch.object(catalog, "_catalog_candidates", side_effect=candidates):
+                self.assertIsNone(catalog.cached_catalog("hwnhub"))
+                self.assertIn("com.example.Alpha", catalog.load_catalog(remote="hwnhub"))
+                self.assertEqual(catalog.load_catalog(), {})
+            self.assertIn("com.example.Alpha", catalog.cached_catalog("hwnhub"))
+
+
 if __name__ == "__main__":
     unittest.main()

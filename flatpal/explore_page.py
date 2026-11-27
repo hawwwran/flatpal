@@ -364,6 +364,11 @@ class ExplorePage(Gtk.Box):
         self._popular_limit = INITIAL_LIMIT
         self.refresh()
 
+    def reload_catalog(self) -> None:
+        """Re-read Flathub's catalog after a refresh
+        (see `CatalogManager.reload_catalog`)."""
+        self._data.reload_catalog()
+
     def catalog_app(self, app_id: str) -> Optional[dict]:
         return self._data.catalog.get(app_id) if self._data.catalog_loaded else None
 
